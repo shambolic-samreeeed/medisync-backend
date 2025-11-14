@@ -1,20 +1,17 @@
-<div align="center">
+<h1 align="center">📦 MediSync</h1>
+<h3 align="center">Pharmacy Inventory Management System</h3>
 
-# 🌡️ MediSync  
-### *Pharmacy Inventory Management System (FYP)*
-
-👤 **Developer:** *Samreed Maharjan (2408251)*  
-🧑‍🏫 **Supervisor:** *Niroj Humagain*  
-📘 **Reader:** *Biraj Dulal*
-
----
-
-### 🔧 Tech Stack
-![NodeJS](https://img.shields.io/badge/Node.js-303030?style=for-the-badge&logo=node.js)
-![TypeScript](https://img.shields.io/badge/TypeScript-1f6feb?style=for-the-badge&logo=typescript)
-![Express](https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express)
-![MongoDB](https://img.shields.io/badge/MongoDB-054527?style=for-the-badge&logo=mongodb)
+<p align="center">
+  Final Year Project (FYP) <br/>
+  <strong>Samreed Maharjan — ID: 2408251</strong> <br/>
+  Supervisor: <strong>Niroj Humagain</strong> • Reader: <strong>Biraj Dulal</strong>
+</p>
 
 ---
 
-</div>
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-339933.svg?&style=for-the-badge&logo=node.js&logoColor=white"/>
+  <img src="https://img.shields.io/badge/TypeScript-007ACC.svg?&style=for-the-badge&logo=typescript&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Express.js-000000.svg?&style=for-the-badge&logo=express&logoColor=white"/>
+  <img src="https://img.shields.io/badge/MongoDB-47A248.svg?&style=for-the-badge&logo=mongodb&logoColor=white"/>
+</p>
