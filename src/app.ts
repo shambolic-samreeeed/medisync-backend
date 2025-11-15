@@ -1,16 +1,15 @@
 import express from "express";
 import morgan from "morgan";
 import cors from "cors";
-import authRoutes from "./routes/authRoute";
+import authRoutes from "./routes/auth.routes";
 
 const app = express();
 
-// Middleware
 app.use(express.json());
 app.use(morgan("dev"));
 app.use(cors());
 
-// Routes
+// Auth routes
 app.use("/api/auth", authRoutes);
 
 // Test root
