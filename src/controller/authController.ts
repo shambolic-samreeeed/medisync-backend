@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { User } from "../models/User";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.helper";
+import bcrypt from "bcrypt";
 
 // Register
 export const register = async (req: Request, res: Response) => {
@@ -103,6 +104,7 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
+//delete user by ID
 export const deleteUserByUserId = async (req: Request, res: Response) => {
   try {
     const userId = req.params.userId; 
@@ -125,5 +127,87 @@ export const deleteUserByUserId = async (req: Request, res: Response) => {
     return res.status(200).json({ success: true, message: "User deleted successfully" });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Server error", error: (err as Error).message });
+  }
+};
+
+
+// Update user profile 
+export const updateUser = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { firstName, lastName, email, role } = req.body;
+    const requester = (req as any).user; // the logged-in user
+
+    // Regular users can only update their own profile
+    if (requester.role !== "ADMIN" && requester.userId !== userId) {
+      return res.status(403).json({ success: false, message: "You can only update your own profile" });
+    }
+
+    // Prepare fields to update
+    const updateData: any = {};
+    if (firstName) updateData.firstName = firstName;
+    if (lastName) updateData.lastName = lastName;
+    if (email) updateData.email = email;
+
+    // Only admins can update roles
+    if (requester.role === "ADMIN" && role) {
+      updateData.role = role;
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      { userId },
+      { $set: updateData },
+      { new: true }
+    ).select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({ success: true, message: "User updated successfully", user: updatedUser });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Server error", error: (err as Error).message });
+  }
+};
+
+
+// Update Password
+export const updatePassword = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params; // userId of the user to update
+    const { newPassword } = req.body;
+
+    if (!newPassword) {
+      return res.status(400).json({ success: false, message: "New password is required" });
+    }
+
+    const requester = (req as any).user; // logged-in user
+
+    // Non-admin users can only update their own password
+    if (requester.role !== "ADMIN" && requester.userId !== userId) {
+      return res.status(403).json({ success: false, message: "You can only update your own password" });
+    }
+
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password updated successfully",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: (err as Error).message,
+    });
   }
 };
