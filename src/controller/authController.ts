@@ -2,9 +2,7 @@ import { Request, Response } from "express";
 import { User } from "../models/User";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.helper";
 
-// ----------------------
 // Register
-// ----------------------
 export const register = async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, email, password, role } = req.body;
@@ -55,9 +53,7 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
-// ----------------------
 // Login
-// ----------------------
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;

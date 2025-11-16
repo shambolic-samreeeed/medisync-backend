@@ -1,8 +1,11 @@
 import mongoose, { Document, Model } from "mongoose";
 import bcrypt from 'bcrypt'
+import { v4 as uuidv4 } from "uuid";
+
 
 //typescript interface
 export interface IUser extends Document {
+  userId: string,
   firstName: string;
   lastName: string;
   email: string;
@@ -12,18 +15,26 @@ export interface IUser extends Document {
 }
 
 //mongoose schema for the user collection.
-const UserSchema = new mongoose.Schema<IUser>({
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  email: { type: String, required: [true, "Email is required"], unique: true },
-  password: { type: String, required: [true, "Password is required"] },
-  role: {
-    type: String,
-    enum: ["ADMIN", "PHARMACIST", "DOCTOR", "PATIENT"],
-    default: "PHARMACIST",
-    required: [true, "Role is required"],
+const UserSchema = new mongoose.Schema<IUser>(
+  {
+    userId: {
+      type: String,
+      default: () => uuidv4(),
+      unique: true,
+    },
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
+    email: { type: String, required: [true, "Email is required"], unique: true },
+    password: { type: String, required: [true, "Password is required"] },
+    role: {
+      type: String,
+      enum: ["ADMIN", "PHARMACIST", "DOCTOR", "PATIENT"],
+      default: "PHARMACIST",
+      required: true,
+    },
   },
-});
+  { timestamps: true }
+);
 
 // This function runs BEFORE saving a User document
 // It hashes the password if it was modified (new or updated)
