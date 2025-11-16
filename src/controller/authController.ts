@@ -7,21 +7,20 @@ export const register = async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, email, password, role } = req.body;
 
-    // Validate required fields
     if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({ success: false, message: "All fields are required" });
     }
 
-    // Check if user already exists
+    //check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ success: false, message: "Email already registered" });
     }
 
-    // Create user
+    //create user
     const user = await User.create({ firstName, lastName, email, password, role });
 
-    // Generate JWT tokens safely
+    //generate jwt tokens safely
     let accessToken = "";
     let refreshToken = "";
     try {
@@ -58,7 +57,6 @@ export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    // Validate fields
     if (!email || !password) {
       return res.status(400).json({ success: false, message: "Email and password are required" });
     }
@@ -73,7 +71,7 @@ export const login = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Generate JWT tokens safely
+    //generate jwt token
     let accessToken = "";
     let refreshToken = "";
     try {
@@ -102,5 +100,30 @@ export const login = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Login error:", error);
     return res.status(500).json({ success: false, message: "Server error", error });
+  }
+};
+
+export const deleteUserByUserId = async (req: Request, res: Response) => {
+  try {
+    const userId = req.params.userId; 
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "UserId is required" });
+    }
+
+    // Prevent admin from deleting themselves
+    if ((req as any).user.userId === userId) {
+      return res.status(400).json({ success: false, message: "You cannot delete yourself" });
+    }
+
+    const deletedUser = await User.findOneAndDelete({ userId });
+
+    if (!deletedUser) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({ success: true, message: "User deleted successfully" });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Server error", error: (err as Error).message });
   }
 };
