@@ -8,6 +8,7 @@
     "strict": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,
+    "types": ["node"],
     "skipLibCheck": true,
     "baseUrl": "./",
     "paths": {
