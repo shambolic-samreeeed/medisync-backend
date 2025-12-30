@@ -3,11 +3,13 @@ import morgan from "morgan";
 import cors from "cors";
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/users.routes";
+import cookieParser from "cookie-parser";
 
 const app = express();
 
 app.use(express.json());
 app.use(morgan("dev"));
+app.use(cookieParser());
 
 // FIXED CORS HERE
 app.use(
