@@ -59,46 +59,29 @@ export const login = async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
+      return res.status(400).json({ success: false, message: "Email and password are required" });
     }
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid credentials",
-      });
+      return res.status(400).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Generate tokens
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    // Set tokens
-    res.cookie("accessToken", accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 15 * 60 * 1000, // 15 minutes
-    });
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, 
-    });
+    //generate jwt token
+    let accessToken = "";
+    let refreshToken = "";
+    try {
+      accessToken = generateAccessToken(user);
+      refreshToken = generateRefreshToken(user);
+    } catch (err) {
+      console.error("JWT generation failed", err);
+      return res.status(500).json({ success: false, message: "Server error generating token" });
+    }
 
     return res.status(200).json({
       success: true,
@@ -111,17 +94,15 @@ export const login = async (req: Request, res: Response) => {
           email: user.email,
           role: user.role,
         },
+        accessToken,
+        refreshToken,
       },
     });
   } catch (error) {
     console.error("Login error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    return res.status(500).json({ success: false, message: "Server error", error });
   }
 };
-
 
 //delete user by ID
 export const deleteUserByUserId = async (req: Request, res: Response) => {
