@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { uploadMedicineCSV } from "src/controller/medicineController";
-import { uploadCSV } from "src/middlewares/uploadCSV";
+import { uploadMedicineCSV } from "../controller/medicineController";
+import { uploadCSV } from "../middlewares/uploadCSV";
 
 const router = Router();
 
