@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { uploadMedicineCSV } from "../controller/medicineController";
+import { getAllMedicines, uploadMedicineCSV } from "../controller/medicineController";
 import { uploadCSV } from "../middlewares/uploadCSV";
 
 const router = Router();
@@ -9,5 +9,7 @@ router.post(
   uploadCSV.single("file"),
   uploadMedicineCSV
 );
+
+router.get("/", getAllMedicines)
 
 export default router;

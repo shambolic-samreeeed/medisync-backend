@@ -19,7 +19,6 @@ export const uploadMedicineCSV = async (
 ): Promise<Response> => {
   const file = req.file;
 
-  // ✅ FIX: Type narrowing
   if (!file) {
     return res.status(400).json({ message: "CSV file is required" });
   }
@@ -68,3 +67,13 @@ export const uploadMedicineCSV = async (
 
   return res;
 };
+
+export const getAllMedicines = async (req: Request, res: Response)=>{
+    try{
+        const medicines = await Medicine.find().sort({ name: 1, batchNo: 1});
+        res.status(200).json(medicines);
+    }catch(error){
+        console.error(error);
+        res.status(500).json({message: 'Failed to fetch medicine', error});
+    }
+}
