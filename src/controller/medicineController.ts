@@ -4,14 +4,23 @@ import Medicine from "../models/Medicine";
 import { Readable } from "stream";
 
 interface CSVMedicineRow {
-  medicineId: string;
+  medicineId?: string;        // optional, auto-generate if missing
+  barcode?: string;
   name: string;
+  brand?: string;
+  category?: string;
+  description?: string;
   batchNo: string;
-  expiryDate: string;
-  stock: string;
+  stock: string;              // CSVs are always strings
+  reorderLevel?: string;
+  unit?: string;
   unitPrice: string;
   supplier?: string;
+  expiryDate: string;
+  manufactureDate?: string;
+  addedAt?: string;
 }
+
 
 export const uploadMedicineCSV = async (
   req: Request,
@@ -34,23 +43,29 @@ export const uploadMedicineCSV = async (
       try {
         for (const med of medicines) {
           await Medicine.findOneAndUpdate(
-            {
-              medicineId: med.medicineId,
-              batchNo: med.batchNo,
-            },
-            {
-              $set: {
-                name: med.name,
-                expiryDate: new Date(med.expiryDate),
-                unitPrice: Number(med.unitPrice),
-                supplier: med.supplier,
-              },
-              $inc: {
-                stock: Number(med.stock), // ✅ ADD stock
-              },
-            },
-            { upsert: true }
-          );
+  { medicineId: med.medicineId || undefined, batchNo: med.batchNo },
+  {
+    $set: {
+      name: med.name,
+      barcode: med.barcode,
+      brand: med.brand,
+      category: med.category,
+      description: med.description,
+      expiryDate: new Date(med.expiryDate),
+      manufactureDate: med.manufactureDate ? new Date(med.manufactureDate) : undefined,
+      unitPrice: Number(med.unitPrice),
+      supplier: med.supplier,
+      reorderLevel: med.reorderLevel ? Number(med.reorderLevel) : 0,
+      unit: med.unit,
+      addedAt: med.addedAt ? new Date(med.addedAt) : new Date(),
+    },
+    $inc: {
+      stock: Number(med.stock),
+    },
+  },
+  { upsert: true }
+);
+
         }
 
         res.status(200).json({
