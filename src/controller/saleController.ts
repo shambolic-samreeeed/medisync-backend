@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
+import Stats from "../models/Stats"; // <-- import Stats model
 import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
 
@@ -50,6 +51,7 @@ export const createSale = async (req: Request, res: Response) => {
 
     const change = data.paidAmount - totalAmount;
 
+    // Save sale record
     const saleRecord = new Sale({
       saleId: uuidv4(),
       items: saleItems,
@@ -65,6 +67,63 @@ export const createSale = async (req: Request, res: Response) => {
 
     await saleRecord.save();
 
+    // -------------------------------
+    //  Update dashboard stats
+    // -------------------------------
+    const totalQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+    // Update totalRevenue, totalSales, totalItemsSold
+    await Stats.findByIdAndUpdate(
+      "dashboardStats",
+      {
+        $inc: {
+          totalRevenue: totalAmount,
+          totalSales: 1,
+          totalItemsSold: totalQuantity,
+        },
+        $set: { lastUpdated: new Date() },
+      },
+      { upsert: true, new: true }
+    );
+
+    // Update dailyStats
+    const dailyUpdateResult = await Stats.updateOne(
+      { _id: "dashboardStats", "dailyStats.date": today },
+      {
+        $inc: {
+          "dailyStats.$.revenue": totalAmount,
+          "dailyStats.$.itemsSold": totalQuantity,
+        },
+      }
+    );
+
+    // If today's entry doesn't exist, create it
+    if (dailyUpdateResult.matchedCount === 0) {
+      await Stats.updateOne(
+        { _id: "dashboardStats" },
+        { $push: { dailyStats: { date: today, revenue: totalAmount, itemsSold: totalQuantity } } },
+        { upsert: true }
+      );
+    }
+
+    // Update bestSelling medicines
+    for (const item of saleItems) {
+      const updateResult = await Stats.updateOne(
+        { _id: "dashboardStats", "bestSelling.medicineId": item.medicineId },
+        { $inc: { "bestSelling.$.totalSold": item.quantity } }
+      );
+
+      // If medicine not in bestSelling array, add it
+      if (updateResult.matchedCount === 0) {
+        await Stats.updateOne(
+          { _id: "dashboardStats" },
+          { $push: { bestSelling: { medicineId: item.medicineId, name: item.name, totalSold: item.quantity } } }
+        );
+      }
+    }
+
+    // Return sale response
     res.status(201).json({
       message: "Sale recorded successfully",
       sale: saleRecord,

@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/users.routes";
 import medicineRoutes from './routes/medicine.routes'
 import saleRoutes from './routes/sale.routes'
+import dashboardRoutes from './routes/dashboard.routes'
 import cookieParser from "cookie-parser";
 
 const app = express();
@@ -32,6 +33,9 @@ app.use("/api/medicines", medicineRoutes);
 
 // Sale routes
 app.use("/api/sales", saleRoutes);
+
+// Dashboard routes
+app.use("/api/dashboard", dashboardRoutes);
 
 // Test root
 app.get("/", (_req, res) => {
