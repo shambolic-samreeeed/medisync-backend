@@ -37,6 +37,8 @@ app.use("/api/sales", saleRoutes);
 // Dashboard routes
 app.use("/api/dashboard", dashboardRoutes);
 
+
+
 // Test root
 app.get("/", (_req, res) => {
   res.send("MediSync API Running");
