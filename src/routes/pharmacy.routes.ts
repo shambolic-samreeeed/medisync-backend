@@ -6,7 +6,7 @@ import {
   updatePharmacy,
   deletePharmacy,
 } from "../controller/pharmacyController";
-import { adminOnly } from "src/middlewares/adminsOnly";
+import { adminOnly } from "../middlewares/adminsOnly";
 
 const router = Router();
 
