@@ -1,11 +1,11 @@
-import mongoose, { Document, Model } from "mongoose";
-import bcrypt from 'bcrypt'
+import mongoose, { Document, Model, Schema } from "mongoose";
+import bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 
-
-//typescript interface
+// TypeScript interface
 export interface IUser extends Document {
-  userId: string,
+  userId: string;
+  pharmacyId: string | mongoose.Types.ObjectId; // <- fix here
   firstName: string;
   lastName: string;
   email: string;
@@ -14,14 +14,15 @@ export interface IUser extends Document {
   comparePassword(password: string): Promise<boolean>;
 }
 
-//mongoose schema for the user collection.
-const UserSchema = new mongoose.Schema<IUser>(
+// Mongoose schema for the user collection
+const UserSchema = new Schema<IUser>(
   {
     userId: {
       type: String,
       default: () => uuidv4(),
       unique: true,
     },
+    pharmacyId: { type: Schema.Types.ObjectId, ref: "Pharmacy", required: true }, 
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     email: { type: String, required: [true, "Email is required"], unique: true },
@@ -36,17 +37,16 @@ const UserSchema = new mongoose.Schema<IUser>(
   { timestamps: true }
 );
 
-// This function runs BEFORE saving a User document
-// It hashes the password if it was modified (new or updated)
-UserSchema.pre("save", async function(next) {
+// Pre-save hook to hash password
+UserSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// Allows us to call user.comparePassword(inputPassword) to check login
-UserSchema.methods.comparePassword = function(password: string) {
+// Method to compare password
+UserSchema.methods.comparePassword = function (password: string) {
   return bcrypt.compare(password, this.password);
 };
 

@@ -2,26 +2,55 @@ import { Request, Response } from "express";
 import { User } from "../models/User";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.helper";
 import bcrypt from "bcrypt";
+import { v4 as uuidv4 } from "uuid";
 
-// Register
+/**
+ * POST /api/auth/register
+ * Registers a new user (Admin, Pharmacist, Doctor, Patient)
+ * Requires: firstName, lastName, email, password, role, pharmacyId (if applicable)
+ */
 export const register = async (req: Request, res: Response) => {
   try {
-    const { firstName, lastName, email, password, role } = req.body;
+    const { firstName, lastName, email, password, role, pharmacyId } = req.body;
 
+    // Validate required fields
     if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({ success: false, message: "All fields are required" });
     }
 
-    //check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: "Email already registered" });
+    // Validate role
+    const validRoles = ["ADMIN", "PHARMACIST", "DOCTOR", "PATIENT"];
+    if (!validRoles.includes(role.toUpperCase())) {
+      return res.status(400).json({ success: false, message: "Invalid role" });
     }
 
-    //create user
-    const user = await User.create({ firstName, lastName, email, password, role });
+    // Pharmacists must have a pharmacyId
+    if (role.toUpperCase() === "PHARMACIST" && !pharmacyId) {
+      return res.status(400).json({ success: false, message: "Pharmacist must belong to a pharmacy" });
+    }
 
-    //generate jwt tokens safely
+    // Check if email already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ success: false, message: "Email already registered" });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create user
+    const user = await User.create({
+      userId: uuidv4(),
+      firstName,
+      lastName,
+      email,
+      password: hashedPassword,
+      role: role.toUpperCase(),
+      pharmacyId: pharmacyId || undefined, // optional for non-pharmacists
+    });
+
+    // Generate JWT tokens
     let accessToken = "";
     let refreshToken = "";
     try {
@@ -32,17 +61,14 @@ export const register = async (req: Request, res: Response) => {
       return res.status(500).json({ success: false, message: "Server error generating token" });
     }
 
+    // Return response without password
+    const { password: _, ...userData } = user.toObject();
+
     return res.status(201).json({
       success: true,
       message: "User registered successfully",
       data: {
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          role: user.role,
-        },
+        user: userData,
         accessToken,
         refreshToken,
       },
@@ -53,7 +79,10 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
-// Login
+/**
+ * POST /api/auth/login
+ * Login a user and return JWT tokens
+ */
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -72,7 +101,7 @@ export const login = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Invalid credentials" });
     }
 
-    //generate jwt token
+    // Generate JWT tokens
     let accessToken = "";
     let refreshToken = "";
     try {
@@ -83,17 +112,13 @@ export const login = async (req: Request, res: Response) => {
       return res.status(500).json({ success: false, message: "Server error generating token" });
     }
 
+    const { password: _, ...userData } = user.toObject();
+
     return res.status(200).json({
       success: true,
       message: "Login successful",
       data: {
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          role: user.role,
-        },
+        user: userData,
         accessToken,
         refreshToken,
       },
