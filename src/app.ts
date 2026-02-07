@@ -31,7 +31,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/medicines", medicineRoutes);
 
 // Sale routes
-app.use("api/sales", saleRoutes);
+app.use("/api/sales", saleRoutes);
 
 // Test root
 app.get("/", (_req, res) => {
