@@ -8,16 +8,20 @@ import mongoose from "mongoose";
  */
 export const createPharmacy = async (req: Request, res: Response) => {
   try {
-    const { name, address, phone } = req.body;
     const requester = (req as any).user;
 
-    // Only admin can create pharmacies
+    if (!requester) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
     if (requester.role !== "ADMIN") {
       return res.status(403).json({
         success: false,
         message: "Only admins can create pharmacies",
       });
     }
+
+    const { name, address, phone } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -26,7 +30,6 @@ export const createPharmacy = async (req: Request, res: Response) => {
       });
     }
 
-    // Check duplicate pharmacy
     const existingPharmacy = await Pharmacy.findOne({ name });
     if (existingPharmacy) {
       return res.status(409).json({
@@ -35,11 +38,7 @@ export const createPharmacy = async (req: Request, res: Response) => {
       });
     }
 
-    const pharmacy = await Pharmacy.create({
-      name,
-      address,
-      phone,
-    });
+    const pharmacy = await Pharmacy.create({ name, address, phone });
 
     return res.status(201).json({
       success: true,
@@ -58,10 +57,15 @@ export const createPharmacy = async (req: Request, res: Response) => {
 
 /**
  * GET /api/pharmacies
- * Get all pharmacies
+ * Get all pharmacies (Any authenticated user)
  */
-export const getAllPharmacies = async (_req: Request, res: Response) => {
+export const getAllPharmacies = async (req: Request, res: Response) => {
   try {
+    const requester = (req as any).user;
+    if (!requester) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
     const pharmacies = await Pharmacy.find().sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -79,10 +83,15 @@ export const getAllPharmacies = async (_req: Request, res: Response) => {
 
 /**
  * GET /api/pharmacies/:id
- * Get pharmacy by ID
+ * Get pharmacy by ID (Any authenticated user)
  */
 export const getPharmacyById = async (req: Request, res: Response) => {
   try {
+    const requester = (req as any).user;
+    if (!requester) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -119,9 +128,11 @@ export const getPharmacyById = async (req: Request, res: Response) => {
  */
 export const updatePharmacy = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { name, address, phone } = req.body;
     const requester = (req as any).user;
+
+    if (!requester) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
     if (requester.role !== "ADMIN") {
       return res.status(403).json({
@@ -129,6 +140,9 @@ export const updatePharmacy = async (req: Request, res: Response) => {
         message: "Only admins can update pharmacies",
       });
     }
+
+    const { id } = req.params;
+    const { name, address, phone } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -175,8 +189,11 @@ export const updatePharmacy = async (req: Request, res: Response) => {
  */
 export const deletePharmacy = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
     const requester = (req as any).user;
+
+    if (!requester) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
     if (requester.role !== "ADMIN") {
       return res.status(403).json({
@@ -184,6 +201,8 @@ export const deletePharmacy = async (req: Request, res: Response) => {
         message: "Only admins can delete pharmacies",
       });
     }
+
+    const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
