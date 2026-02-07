@@ -6,19 +6,14 @@ import {
   updatePharmacy,
   deletePharmacy,
 } from "../controller/pharmacyController";
-// import { adminOnly } from "../middlewares/adminsOnly";
+import { authenticate } from "../middlewares/authenticate";
 
 const router = Router();
 
-// router.post("/", adminOnly, createPharmacy);
-// router.get("/", adminOnly, getAllPharmacies);
-// router.get("/:id", adminOnly, getPharmacyById);
-// router.put("/:id", adminOnly, updatePharmacy);
-// router.delete("/:id", adminOnly, deletePharmacy);
-router.post("/", createPharmacy);
-router.get("/", getAllPharmacies);
-router.get("/:id", getPharmacyById);
-router.put("/:id", updatePharmacy);
-router.delete("/:id", deletePharmacy);
+router.post("/", authenticate, createPharmacy);
+router.get("/", authenticate, getAllPharmacies);
+router.get("/:id", authenticate, getPharmacyById);
+router.put("/:id", authenticate, updatePharmacy);
+router.delete("/:id", authenticate, deletePharmacy);
 
 export default router;

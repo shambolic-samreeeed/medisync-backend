@@ -39,7 +39,7 @@ app.use("/api/sales", saleRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
 //Pharmacy routes
-app.use('/app/pharmacies', pharmacyRoutes)
+app.use('/api/pharmacies', pharmacyRoutes)
 
 
 
