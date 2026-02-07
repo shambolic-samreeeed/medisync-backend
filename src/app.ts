@@ -4,6 +4,7 @@ import cors from "cors";
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/users.routes";
 import medicineRoutes from './routes/medicine.routes'
+import saleRoutes from './routes/sale.routes'
 import cookieParser from "cookie-parser";
 
 const app = express();
@@ -28,6 +29,9 @@ app.use("/api/users", userRoutes);
 
 // MedicineRoutes 
 app.use("/api/medicines", medicineRoutes)
+
+// Sale routes
+app.use("api/sales", saleRoutes )
 
 // Test root
 app.get("/", (_req, res) => {
