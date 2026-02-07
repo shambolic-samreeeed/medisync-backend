@@ -67,7 +67,10 @@ export const login = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Email and password are required" });
     }
 
-    const user = await User.findOne({ email: String(email).toLowerCase() });
+    // ✅ populate pharmacy name
+    const user = await User.findOne({ email: String(email).toLowerCase() })
+      .populate("pharmacyId", "name");
+
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
@@ -80,12 +83,29 @@ export const login = async (req: Request, res: Response) => {
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    const { password: _pw, ...userData } = user.toObject();
+    const userObj: any = user.toObject();
+    delete userObj.password;
 
+    const pharmacyName =
+      userObj.role === "PHARMACIST" && userObj.pharmacyId?.name
+        ? userObj.pharmacyId.name
+        : undefined;
+
+    // ✅ Return a clean user object for frontend
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      data: { user: userData, accessToken, refreshToken },
+      data: {
+        user: {
+          firstName: userObj.firstName,
+          lastName: userObj.lastName,
+          email: userObj.email,
+          role: userObj.role,
+          pharmacyName, // ✅ what TopBar should show
+        },
+        accessToken,
+        refreshToken,
+      },
     });
   } catch (error) {
     console.error("Login error:", error);
