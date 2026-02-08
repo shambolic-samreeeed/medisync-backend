@@ -15,7 +15,7 @@ export interface IMedicine extends Document {
   pharmacyId: mongoose.Types.ObjectId;
   uploadedBy?: mongoose.Types.ObjectId;
 
-  medicineId?: string;
+  medicineId: string;
   barcode?: string;
   name: string;
   brand?: string;
@@ -37,7 +37,8 @@ const medicineSchema = new Schema<IMedicine>(
     pharmacyId: { type: Schema.Types.ObjectId, ref: "Pharmacy", required: true },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User" },
 
-    medicineId: { type: String },
+    medicineId: { type: String, required: true, trim: true },
+
     barcode: { type: String },
     name: { type: String, required: true, trim: true },
     brand: { type: String },
@@ -60,8 +61,8 @@ const medicineSchema = new Schema<IMedicine>(
   { timestamps: true }
 );
 
-// ✅ Unique per pharmacy (adjust fields if your uniqueness rule differs)
-medicineSchema.index({ pharmacyId: 1, name: 1, batchNo: 1 }, { unique: true });
+medicineSchema.index({ pharmacyId: 1, medicineId: 1, batchNo: 1 }, { unique: true });
+
 
 const Medicine = mongoose.model<IMedicine>("Medicine", medicineSchema);
 export default Medicine;
