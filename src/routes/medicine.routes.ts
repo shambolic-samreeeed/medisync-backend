@@ -9,9 +9,9 @@
  */
 
 import { Router } from "express";
-import { addMedicineManually, getAllMedicines, uploadMedicineCSV } from "src/controller/medicineController";
-import { authMiddleware } from "src/middlewares/authMiddleware";
-import upload from "src/middlewares/multerMiddleware";
+import { addMedicineManually, getAllMedicines, uploadMedicineCSV } from "../controller/medicineController";
+import { authMiddleware } from "../middlewares/authMiddleware";
+import upload from "../middlewares/multerMiddleware";
 
 const router = Router();
 
