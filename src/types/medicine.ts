@@ -14,6 +14,9 @@
 
 
 export interface MedicineInput {
+  pharmacyId?:string,
+  uploadedBy?:string,
+  
   medicineId?: string;
   barcode?: string;
   name: string;
