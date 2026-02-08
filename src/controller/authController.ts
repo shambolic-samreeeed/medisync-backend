@@ -91,7 +91,7 @@ export const login = async (req: Request, res: Response) => {
         ? userObj.pharmacyId.name
         : undefined;
 
-    // ✅ Return a clean user object for frontend
+    //  Return a clean user object for frontend
     return res.status(200).json({
       success: true,
       message: "Login successful",
@@ -101,7 +101,8 @@ export const login = async (req: Request, res: Response) => {
           lastName: userObj.lastName,
           email: userObj.email,
           role: userObj.role,
-          pharmacyName, // ✅ what TopBar should show
+          pharmacyId: userObj.pharmacyId,
+          pharmacyName, 
         },
         accessToken,
         refreshToken,
