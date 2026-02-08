@@ -1,13 +1,30 @@
+/**
+ * @file controller/saleController.ts
+ * @description
+ * Sale controller for MediSync (multi-pharmacy safe).
+ *
+ * Key rules:
+ * - DO NOT accept pharmacyId from the client.
+ * - Always take pharmacyId from `req.user.pharmacyId` (set by authMiddleware).
+ * - Every medicine lookup/update must include pharmacyId so pharmacies can't affect each other.
+ */
+
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
-import Stats from "../models/Stats"; // <-- import Stats model
+import Stats from "../models/Stats";
 import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
 
 // POST /api/sales
 export const createSale = async (req: Request, res: Response) => {
   try {
+    // ✅ Fix TS2322 + ensure pharmacy scoping
+    const pharmacyId = req.user?.pharmacyId;
+    if (!pharmacyId) {
+      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+    }
+
     const data: SaleInput = req.body;
 
     if (!data.items || data.items.length === 0) {
@@ -17,22 +34,31 @@ export const createSale = async (req: Request, res: Response) => {
     let totalAmount = 0;
     const saleItems: CartItem[] = [];
 
-    // Check stock and calculate totals
+    // Check stock and calculate totals (pharmacy-safe)
     for (const item of data.items) {
-      const medicine = await Medicine.findOne({ medicineId: item.medicineId, batchNo: item.batchNo });
+      const medicine = await Medicine.findOne({
+        pharmacyId, // ✅ IMPORTANT
+        medicineId: item.medicineId,
+        batchNo: item.batchNo,
+      });
+
       if (!medicine) {
-        return res.status(404).json({ message: `Medicine ${item.medicineId} batch ${item.batchNo} not found.` });
+        return res.status(404).json({
+          message: `Medicine ${item.medicineId} batch ${item.batchNo} not found for this pharmacy.`,
+        });
       }
 
       if (medicine.stock < item.quantity) {
-        return res.status(400).json({ message: `Not enough stock for ${medicine.name} batch ${item.batchNo}.` });
+        return res.status(400).json({
+          message: `Not enough stock for ${medicine.name} batch ${item.batchNo}.`,
+        });
       }
 
       const total = medicine.unitPrice * item.quantity;
       totalAmount += total;
 
       saleItems.push({
-        medicineId: medicine.medicineId,
+        medicineId: item.medicineId,
         batchNo: medicine.batchNo,
         name: medicine.name,
         unitPrice: medicine.unitPrice,
@@ -41,10 +67,14 @@ export const createSale = async (req: Request, res: Response) => {
       });
     }
 
-    // Deduct stock
+    // Deduct stock (pharmacy-safe)
     for (const item of data.items) {
       await Medicine.findOneAndUpdate(
-        { medicineId: item.medicineId, batchNo: item.batchNo },
+        {
+          pharmacyId, // ✅ IMPORTANT
+          medicineId: item.medicineId,
+          batchNo: item.batchNo,
+        },
         { $inc: { stock: -item.quantity } }
       );
     }
@@ -52,7 +82,11 @@ export const createSale = async (req: Request, res: Response) => {
     const change = data.paidAmount - totalAmount;
 
     // Save sale record
+    // NOTE: If your Sale schema doesn't have pharmacyId yet, add it later.
+    // Keeping this line is still okay; Mongoose will store it if schema allows it,
+    // or ignore it if strict mode blocks unknown fields.
     const saleRecord = new Sale({
+      pharmacyId, // ✅ recommended for multi-pharmacy (add to Sale schema)
       saleId: uuidv4(),
       items: saleItems,
       totalAmount,
@@ -68,12 +102,13 @@ export const createSale = async (req: Request, res: Response) => {
     await saleRecord.save();
 
     // -------------------------------
-    //  Update dashboard stats
+    // Update dashboard stats
     // -------------------------------
+    // NOTE: Your Stats is currently global ("dashboardStats").
+    // For multi-pharmacy, you should make stats per pharmacy (e.g. _id: `dashboardStats-${pharmacyId}`).
     const totalQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-    // Update totalRevenue, totalSales, totalItemsSold
     await Stats.findByIdAndUpdate(
       "dashboardStats",
       {
@@ -87,7 +122,6 @@ export const createSale = async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
-    // Update dailyStats
     const dailyUpdateResult = await Stats.updateOne(
       { _id: "dashboardStats", "dailyStats.date": today },
       {
@@ -98,7 +132,6 @@ export const createSale = async (req: Request, res: Response) => {
       }
     );
 
-    // If today's entry doesn't exist, create it
     if (dailyUpdateResult.matchedCount === 0) {
       await Stats.updateOne(
         { _id: "dashboardStats" },
@@ -107,14 +140,12 @@ export const createSale = async (req: Request, res: Response) => {
       );
     }
 
-    // Update bestSelling medicines
     for (const item of saleItems) {
       const updateResult = await Stats.updateOne(
         { _id: "dashboardStats", "bestSelling.medicineId": item.medicineId },
         { $inc: { "bestSelling.$.totalSold": item.quantity } }
       );
 
-      // If medicine not in bestSelling array, add it
       if (updateResult.matchedCount === 0) {
         await Stats.updateOne(
           { _id: "dashboardStats" },
@@ -123,13 +154,12 @@ export const createSale = async (req: Request, res: Response) => {
       }
     }
 
-    // Return sale response
-    res.status(201).json({
+    return res.status(201).json({
       message: "Sale recorded successfully",
       sale: saleRecord,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error(error);
-    res.status(500).json({ message: "Failed to process sale", error });
+    return res.status(500).json({ message: "Failed to process sale", error: error?.message || error });
   }
 };
