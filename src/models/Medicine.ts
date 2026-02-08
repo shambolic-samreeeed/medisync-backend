@@ -1,45 +1,55 @@
+/**
+ * @file models/Medicine.ts
+ * @description
+ * Medicine model for MediSync.
+ *
+ * Key design:
+ * - One collection for all pharmacies.
+ * - Each medicine row belongs to a pharmacy using `pharmacyId`.
+ * - Unique constraint is per pharmacy (so different pharmacies can have same batch).
+ */
+
 import mongoose, { Schema, Document } from "mongoose";
-import { v4 as uuidv4 } from "uuid";
 
 export interface IMedicine extends Document {
-  // --- Identifiers ---
-  medicineId: string;       // UUID / internal code
-  barcode?: string;         // optional SKU / barcode
+  pharmacyId: mongoose.Types.ObjectId;
+  uploadedBy?: mongoose.Types.ObjectId;
 
-  // --- Basic Info ---
+  medicineId?: string;
+  barcode?: string;
   name: string;
   brand?: string;
   category?: string;
   description?: string;
-
-  // --- Inventory / Stock ---
-  batchNo: string;          // batch number
-  stock: number;            // tablets / units
-  reorderLevel?: number;    // min stock alert
-  unit?: string;            // tablet / strip / bottle
+  batchNo: string;
+  stock: number;
+  reorderLevel: number;
+  unit?: string;
   unitPrice: number;
   supplier?: string;
-
-  // --- Dates ---
   expiryDate: Date;
   manufactureDate?: Date;
   addedAt: Date;
 }
 
-const MedicineSchema = new Schema<IMedicine>(
+const medicineSchema = new Schema<IMedicine>(
   {
-    medicineId: { type: String, required: true, default: uuidv4 },
-    barcode: { type: String },
+    pharmacyId: { type: Schema.Types.ObjectId, ref: "Pharmacy", required: true },
+    uploadedBy: { type: Schema.Types.ObjectId, ref: "User" },
 
-    name: { type: String, required: true },
+    medicineId: { type: String },
+    barcode: { type: String },
+    name: { type: String, required: true, trim: true },
     brand: { type: String },
     category: { type: String },
     description: { type: String },
 
-    batchNo: { type: String, required: true },
-    stock: { type: Number, required: true },
+    batchNo: { type: String, required: true, trim: true },
+
+    stock: { type: Number, required: true, default: 0 },
     reorderLevel: { type: Number, default: 0 },
     unit: { type: String },
+
     unitPrice: { type: Number, required: true },
     supplier: { type: String },
 
@@ -50,7 +60,8 @@ const MedicineSchema = new Schema<IMedicine>(
   { timestamps: true }
 );
 
-// One batch per medicine
-MedicineSchema.index({ medicineId: 1, batchNo: 1 }, { unique: true });
+// ✅ Unique per pharmacy (adjust fields if your uniqueness rule differs)
+medicineSchema.index({ pharmacyId: 1, name: 1, batchNo: 1 }, { unique: true });
 
-export default mongoose.model<IMedicine>("Medicine", MedicineSchema);
+const Medicine = mongoose.model<IMedicine>("Medicine", medicineSchema);
+export default Medicine;

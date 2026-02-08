@@ -1,47 +1,90 @@
 /**
  * @file utils/medicineHelper.ts
  * @description
- * Provides helper functions for medicine database operations.
+ * upsertMedicine helper:
+ * - Updates stock if same medicine batch already exists for the same pharmacy
+ * - Otherwise creates a new document
  *
- * Functions:
- * - upsertMedicine(data: MedicineInput): Finds a medicine by medicineId and batchNo.
- *     - If found, increments the stock and updates other fields.
- *     - If not found, creates a new medicine batch.
- *
- * Purpose:
- * - Centralizes medicine insert/update logic.
- * - Ensures consistent handling of stock updates across CSV uploads and manual additions.
- * - Reduces duplicate code and improves maintainability.
+ * IMPORTANT:
+ * - Must include pharmacyId in the lookup to prevent pharmacies overwriting each other.
  */
-
 
 import Medicine from "../models/Medicine";
 import { MedicineInput } from "../types/medicine";
 
-export const upsertMedicine = async (data: MedicineInput) => {
-  const medicine = await Medicine.findOneAndUpdate(
-    { medicineId: data.medicineId || undefined, batchNo: data.batchNo },
-    {
-      $set: {
-        name: data.name,
-        barcode: data.barcode,
-        brand: data.brand,
-        category: data.category,
-        description: data.description,
-        expiryDate: data.expiryDate,
-        manufactureDate: data.manufactureDate,
-        unitPrice: data.unitPrice,
-        supplier: data.supplier,
-        reorderLevel: data.reorderLevel || 0,
-        unit: data.unit,
-        addedAt: data.addedAt || new Date(),
-      },
-      $inc: {
-        stock: data.stock,
-      },
-    },
-    { upsert: true, new: true }
-  );
+export const upsertMedicine = async (input: MedicineInput) => {
+  const {
+    pharmacyId,
+    uploadedBy,
 
-  return medicine;
+    medicineId,
+    barcode,
+    name,
+    brand,
+    category,
+    description,
+    batchNo,
+    stock,
+    reorderLevel = 0,
+    unit,
+    unitPrice,
+    supplier,
+    expiryDate,
+    manufactureDate,
+    addedAt,
+  } = input;
+
+  // ✅ Find existing batch inside SAME pharmacy
+  const existing = await Medicine.findOne({
+    pharmacyId,
+    name,
+    batchNo,
+  });
+
+  if (existing) {
+    // Update existing batch
+    existing.medicineId = medicineId ?? existing.medicineId;
+    existing.barcode = barcode ?? existing.barcode;
+    existing.brand = brand ?? existing.brand;
+    existing.category = category ?? existing.category;
+    existing.description = description ?? existing.description;
+
+    existing.stock = stock; // choose whether to replace or add; replace is simplest
+    existing.reorderLevel = reorderLevel;
+    existing.unit = unit ?? existing.unit;
+    existing.unitPrice = unitPrice;
+    existing.supplier = supplier ?? existing.supplier;
+    existing.expiryDate = expiryDate;
+    existing.manufactureDate = manufactureDate ?? existing.manufactureDate;
+    existing.addedAt = addedAt ?? existing.addedAt;
+
+    if (uploadedBy) existing.uploadedBy = uploadedBy as any;
+
+    await existing.save();
+    return existing;
+  }
+
+  // Create new document
+  const created = await Medicine.create({
+    pharmacyId,
+    uploadedBy,
+
+    medicineId,
+    barcode,
+    name,
+    brand,
+    category,
+    description,
+    batchNo,
+    stock,
+    reorderLevel,
+    unit,
+    unitPrice,
+    supplier,
+    expiryDate,
+    manufactureDate,
+    addedAt: addedAt ?? new Date(),
+  });
+
+  return created;
 };
