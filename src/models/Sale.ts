@@ -11,6 +11,7 @@ export interface CartItem {
 
 export interface SaleDocument extends Document {
   saleId: string;
+  pharmacyId: string; // ✅ add this
   items: CartItem[];
   totalAmount: number;
   paidAmount: number;
@@ -33,18 +34,22 @@ const cartItemSchema = new Schema<CartItem>({
   total: { type: Number, required: true },
 });
 
-const saleSchema = new Schema<SaleDocument>({
-  saleId: { type: String, required: true, unique: true },
-  items: { type: [cartItemSchema], required: true },
-  totalAmount: { type: Number, required: true },
-  paidAmount: { type: Number, required: true },
-  change: { type: Number, required: true },
-  customerName: { type: String },
-  customerPhone: { type: String },
-  customerEmail: { type: String },
-  paymentMethod: { type: String },
-  invoiceNumber: { type: String, required: true },
-}, { timestamps: true });
+const saleSchema = new Schema<SaleDocument>(
+  {
+    saleId: { type: String, required: true, unique: true },
+    pharmacyId: { type: String, required: true }, // ✅ add here
+    items: { type: [cartItemSchema], required: true },
+    totalAmount: { type: Number, required: true },
+    paidAmount: { type: Number, required: true },
+    change: { type: Number, required: true },
+    customerName: { type: String },
+    customerPhone: { type: String },
+    customerEmail: { type: String },
+    paymentMethod: { type: String },
+    invoiceNumber: { type: String, required: true },
+  },
+  { timestamps: true }
+);
 
 const Sale = mongoose.model<SaleDocument>("Sale", saleSchema);
 
