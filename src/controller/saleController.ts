@@ -8,12 +8,14 @@
  * 2. Always read pharmacyId from `req.user.pharmacyId` (set by authMiddleware).
  * 3. All medicine lookups, stock updates, and sales creation are scoped to the logged-in pharmacy.
  * 4. Dashboard stats (total revenue, daily stats, best-selling) are also per pharmacy.
+ * 5. Optionally link a sale to a registered customer by phone.
  */
 
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
 import Stats from "../models/Stats";
+import Customer from "../models/Customer"; // optional if you track customers
 import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
 
@@ -107,7 +109,16 @@ export const createSale = async (req: Request, res: Response) => {
     const change = data.paidAmount - totalAmount;
 
     // -------------------------------
-    // 5️⃣ Save sale record with pharmacyId
+    // 5️⃣ Find customer by phone (optional)
+    // -------------------------------
+    let customerId: string | undefined;
+    if (data.customerPhone) {
+      const customer = await Customer.findOne({ phone: data.customerPhone });
+      if (customer) customerId = customer._id.toString();
+    }
+
+    // -------------------------------
+    // 6️⃣ Save sale record with pharmacyId & optional customerId
     // -------------------------------
     const saleRecord = new Sale({
       pharmacyId,           // ✅ Links sale to logged-in pharmacy
@@ -116,6 +127,7 @@ export const createSale = async (req: Request, res: Response) => {
       totalAmount,
       paidAmount: data.paidAmount,
       change,
+      customerId,           // optional
       customerName: data.customerName,
       customerPhone: data.customerPhone,
       customerEmail: data.customerEmail,
@@ -126,7 +138,7 @@ export const createSale = async (req: Request, res: Response) => {
     await saleRecord.save();
 
     // -------------------------------
-    // 6️⃣ Update dashboard stats (per pharmacy)
+    // 7️⃣ Update dashboard stats (per pharmacy)
     // -------------------------------
     const statsId = `dashboardStats-${pharmacyId}`; // unique per pharmacy
     const totalQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -181,7 +193,7 @@ export const createSale = async (req: Request, res: Response) => {
     }
 
     // -------------------------------
-    // 7️⃣ Return the sale record
+    // 8️⃣ Return the sale record
     // -------------------------------
     return res.status(201).json({
       message: "Sale recorded successfully",
