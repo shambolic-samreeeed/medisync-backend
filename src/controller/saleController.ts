@@ -1,12 +1,13 @@
 /**
  * @file controller/saleController.ts
  * @description
- * Sale controller for MediSync (multi-pharmacy safe).
+ * Sale controller for MediSync POS (multi-pharmacy safe)
  *
- * Key rules:
- * - DO NOT accept pharmacyId from the client.
- * - Always take pharmacyId from `req.user.pharmacyId` (set by authMiddleware).
- * - Every medicine lookup/update must include pharmacyId so pharmacies can't affect each other.
+ * Key Principles:
+ * 1. Do NOT accept `pharmacyId` from the client.
+ * 2. Always read pharmacyId from `req.user.pharmacyId` (set by authMiddleware).
+ * 3. All medicine lookups, stock updates, and sales creation are scoped to the logged-in pharmacy.
+ * 4. Dashboard stats (total revenue, daily stats, best-selling) are also per pharmacy.
  */
 
 import { Request, Response } from "express";
@@ -16,11 +17,28 @@ import Stats from "../models/Stats";
 import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
 
-// POST /api/sales
+/**
+ * @route POST /api/sales
+ * @desc Record a new sale (POS transaction)
+ * @access Protected (requires valid JWT with pharmacyId)
+ *
+ * @body { 
+ *   items: Array<{ medicineId: string, batchNo: string, quantity: number }>,
+ *   customerName?: string,
+ *   customerPhone?: string,
+ *   customerEmail?: string,
+ *   paymentMethod: string ("cash", "card", etc),
+ *   paidAmount: number
+ * }
+ *
+ * @returns { sale: Sale, message: string }
+ */
 export const createSale = async (req: Request, res: Response) => {
   try {
-    // ✅ Fix TS2322 + ensure pharmacy scoping
-    const pharmacyId = req.user?.pharmacyId;
+    // -------------------------------
+    // 1️⃣ Get pharmacyId from logged-in user
+    // -------------------------------
+    const pharmacyId = (req.user as any)?.pharmacyId;
     if (!pharmacyId) {
       return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
     }
@@ -34,10 +52,12 @@ export const createSale = async (req: Request, res: Response) => {
     let totalAmount = 0;
     const saleItems: CartItem[] = [];
 
-    // Check stock and calculate totals (pharmacy-safe)
+    // -------------------------------
+    // 2️⃣ Check stock and calculate totals
+    // -------------------------------
     for (const item of data.items) {
       const medicine = await Medicine.findOne({
-        pharmacyId, // ✅ IMPORTANT
+        pharmacyId,           // ✅ Scope by logged-in pharmacy
         medicineId: item.medicineId,
         batchNo: item.batchNo,
       });
@@ -67,11 +87,13 @@ export const createSale = async (req: Request, res: Response) => {
       });
     }
 
-    // Deduct stock (pharmacy-safe)
+    // -------------------------------
+    // 3️⃣ Deduct stock (pharmacy-scoped)
+    // -------------------------------
     for (const item of data.items) {
       await Medicine.findOneAndUpdate(
         {
-          pharmacyId, // ✅ IMPORTANT
+          pharmacyId,
           medicineId: item.medicineId,
           batchNo: item.batchNo,
         },
@@ -79,14 +101,16 @@ export const createSale = async (req: Request, res: Response) => {
       );
     }
 
+    // -------------------------------
+    // 4️⃣ Calculate change
+    // -------------------------------
     const change = data.paidAmount - totalAmount;
 
-    // Save sale record
-    // NOTE: If your Sale schema doesn't have pharmacyId yet, add it later.
-    // Keeping this line is still okay; Mongoose will store it if schema allows it,
-    // or ignore it if strict mode blocks unknown fields.
+    // -------------------------------
+    // 5️⃣ Save sale record with pharmacyId
+    // -------------------------------
     const saleRecord = new Sale({
-      pharmacyId, // ✅ recommended for multi-pharmacy (add to Sale schema)
+      pharmacyId,           // ✅ Links sale to logged-in pharmacy
       saleId: uuidv4(),
       items: saleItems,
       totalAmount,
@@ -102,15 +126,15 @@ export const createSale = async (req: Request, res: Response) => {
     await saleRecord.save();
 
     // -------------------------------
-    // Update dashboard stats
+    // 6️⃣ Update dashboard stats (per pharmacy)
     // -------------------------------
-    // NOTE: Your Stats is currently global ("dashboardStats").
-    // For multi-pharmacy, you should make stats per pharmacy (e.g. _id: `dashboardStats-${pharmacyId}`).
+    const statsId = `dashboardStats-${pharmacyId}`; // unique per pharmacy
     const totalQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
+    // Overall stats
     await Stats.findByIdAndUpdate(
-      "dashboardStats",
+      statsId,
       {
         $inc: {
           totalRevenue: totalAmount,
@@ -122,8 +146,9 @@ export const createSale = async (req: Request, res: Response) => {
       { upsert: true, new: true }
     );
 
+    // Daily stats
     const dailyUpdateResult = await Stats.updateOne(
-      { _id: "dashboardStats", "dailyStats.date": today },
+      { _id: statsId, "dailyStats.date": today },
       {
         $inc: {
           "dailyStats.$.revenue": totalAmount,
@@ -134,32 +159,40 @@ export const createSale = async (req: Request, res: Response) => {
 
     if (dailyUpdateResult.matchedCount === 0) {
       await Stats.updateOne(
-        { _id: "dashboardStats" },
+        { _id: statsId },
         { $push: { dailyStats: { date: today, revenue: totalAmount, itemsSold: totalQuantity } } },
         { upsert: true }
       );
     }
 
+    // Best-selling medicines
     for (const item of saleItems) {
       const updateResult = await Stats.updateOne(
-        { _id: "dashboardStats", "bestSelling.medicineId": item.medicineId },
+        { _id: statsId, "bestSelling.medicineId": item.medicineId },
         { $inc: { "bestSelling.$.totalSold": item.quantity } }
       );
 
       if (updateResult.matchedCount === 0) {
         await Stats.updateOne(
-          { _id: "dashboardStats" },
+          { _id: statsId },
           { $push: { bestSelling: { medicineId: item.medicineId, name: item.name, totalSold: item.quantity } } }
         );
       }
     }
 
+    // -------------------------------
+    // 7️⃣ Return the sale record
+    // -------------------------------
     return res.status(201).json({
       message: "Sale recorded successfully",
       sale: saleRecord,
     });
+
   } catch (error: any) {
     console.error(error);
-    return res.status(500).json({ message: "Failed to process sale", error: error?.message || error });
+    return res.status(500).json({
+      message: "Failed to process sale",
+      error: error?.message || error,
+    });
   }
 };

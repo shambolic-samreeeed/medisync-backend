@@ -23,7 +23,7 @@ export interface CSVMedicineRow {
 }
 
 export interface MedicineInput {
-  // ✅ Added to make multi-pharmacy safe
+  
   pharmacyId: string;
   uploadedBy?: string;
 
