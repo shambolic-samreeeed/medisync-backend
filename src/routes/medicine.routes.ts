@@ -9,14 +9,26 @@
  */
 
 import { Router } from "express";
-import { addMedicineManually, getAllMedicines, uploadMedicineCSV } from "../controller/medicineController";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import upload from "../middlewares/multerMiddleware";
-
+import {
+  addMedicineManually,
+  getAllMedicines,
+  uploadMedicineCSV,
+} from "../controllers/medicineController"; // ✅ controllers (plural)
 
 const router = Router();
 
+/**
+ * POST /api/medicines/upload-csv
+ * multipart/form-data:
+ * - file (CSV) (key must be "file")
+ * - supplierId (required)
+ * - invoiceNumber (required)
+ * - purchaseDate (optional)
+ */
 router.post("/upload-csv", authMiddleware, upload.single("file"), uploadMedicineCSV);
+
 router.post("/manual", authMiddleware, addMedicineManually);
 router.get("/", authMiddleware, getAllMedicines);
 
