@@ -22,7 +22,7 @@ export const createSupplier = async (req: Request, res: Response) => {
       address: address?.trim(),
     });
 
-    return res.status(201).json({ message: "Supplier created ✅", data: supplier });
+    return res.status(201).json({ message: "Supplier created ", data: supplier });
   } catch (error: any) {
     if (error?.code === 11000) {
       return res.status(409).json({ message: "Supplier name already exists for this pharmacy" });
@@ -81,7 +81,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
 
     await supplier.save();
 
-    return res.status(200).json({ message: "Supplier updated ✅", data: supplier });
+    return res.status(200).json({ message: "Supplier updated ", data: supplier });
   } catch (error: any) {
     if (error?.code === 11000) {
       return res.status(409).json({ message: "Supplier name already exists for this pharmacy" });
@@ -101,7 +101,7 @@ export const deleteSupplier = async (req: Request, res: Response) => {
     const supplier = await Supplier.findOneAndDelete({ _id: id, pharmacyId });
     if (!supplier) return res.status(404).json({ message: "Supplier not found" });
 
-    return res.status(200).json({ message: "Supplier deleted ✅" });
+    return res.status(200).json({ message: "Supplier deleted " });
   } catch (error: any) {
     return res.status(500).json({ message: "Failed to delete supplier", error: error?.message || error });
   }
