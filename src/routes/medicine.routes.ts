@@ -15,7 +15,7 @@ import {
   addMedicineManually,
   getAllMedicines,
   uploadMedicineCSV,
-} from "../controllers/medicineController"; // ✅ controllers (plural)
+} from "../controller/medicineController"; 
 
 const router = Router();
 

@@ -12,7 +12,7 @@ import {
   getSupplierById,
   getSuppliers,
   updateSupplier,
-} from "../controllers/supplierController";
+} from "../controller/supplierController";
 
 const router = Router();
 
