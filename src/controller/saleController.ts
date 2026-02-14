@@ -207,7 +207,7 @@ export const createSale = async (req: Request, res: Response) => {
     }
 
     // -------------------------------
-    // 8️⃣ Return the sale record
+    // Return the sale record
     // -------------------------------
     return res.status(201).json({
       message: "Sale recorded successfully",
