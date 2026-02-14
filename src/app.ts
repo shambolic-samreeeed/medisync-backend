@@ -20,10 +20,14 @@ app.use(cookieParser());
 // FIXED CORS HERE
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: [
+      "http://localhost:3000",
+      "https://medisync-mauve.vercel.app",
+    ],
     credentials: true,
   })
 );
+
 
 // Auth routes
 app.use("/api/auth", authRoutes);
