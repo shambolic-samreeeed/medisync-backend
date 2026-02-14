@@ -1,25 +1,32 @@
-// models/Customer.ts
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
-export interface CustomerDocument extends Document {
-  pharmacyId: string;       // links customer to a specific pharmacy
+export interface ICustomer extends Document {
+  pharmacyId: mongoose.Types.ObjectId;
   name: string;
   phone: string;
   email?: string;
+  address?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const customerSchema = new Schema<CustomerDocument>(
+const customerSchema = new Schema<ICustomer>(
   {
-    pharmacyId: { type: String, required: true }, // DO NOT accept from client, set from auth
-    name: { type: String, required: true },
-    phone: { type: String, required: true, unique: false }, // uniqueness per pharmacy enforced in controller
-    email: { type: String },
+    pharmacyId: {
+      type: Schema.Types.ObjectId,
+      ref: "Pharmacy",
+      required: true,
+      index: true,
+    },
+    name: { type: String, required: true, trim: true },
+    phone: { type: String, required: true, trim: true },
+    email: { type: String, trim: true, lowercase: true },
+    address: { type: String, trim: true },
   },
   { timestamps: true }
 );
 
-const Customer = mongoose.model<CustomerDocument>("Customer", customerSchema);
+// Optional: prevent duplicate phone per pharmacy
+customerSchema.index({ pharmacyId: 1, phone: 1 }, { unique: true });
 
-export default Customer;
+export default mongoose.model<ICustomer>("Customer", customerSchema);

@@ -1,14 +1,15 @@
-// routes/customerRoutes.ts
 import { Router } from "express";
-import { createCustomer, findCustomerByPhone } from "../controller/customerController";
-import { authMiddleware } from "../middlewares/authMiddleware";
+import { createCustomer, deleteCustomer, getCustomerById, getCustomers, updateCustomer } from "src/controller/customerController";
+import { authMiddleware } from "src/middlewares/authMiddleware";
 
 const router = Router();
 
-// Register a new customer
-router.post("/", authMiddleware, createCustomer);
+router.use(authMiddleware);
 
-// Get customer by phone for checkout
-router.get("/:phone", authMiddleware, findCustomerByPhone);
+router.post("/", createCustomer);
+router.get("/", getCustomers);
+router.get("/:id", getCustomerById);
+router.put("/:id", updateCustomer);
+router.delete("/:id", deleteCustomer);
 
 export default router;

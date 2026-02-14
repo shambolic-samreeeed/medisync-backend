@@ -1,66 +1,163 @@
-// controller/customerController.ts
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import Customer from "../models/Customer";
 
-interface CustomerInput {
-  name: string;
-  phone: string;
-  email?: string;
+function getPharmacyIdOrFail(req: Request, res: Response): string | null {
+  const pharmacyId = req.user?.pharmacyId;
+  if (!pharmacyId) {
+    res.status(401).json({ message: "Unauthorized (missing pharmacyId)" });
+    return null;
+  }
+  return pharmacyId;
 }
 
-// Create/register a new customer
-export const createCustomer = async (req: Request, res: Response) => {
+/**
+ * POST /api/customers
+ * Create customer (auto assigns pharmacyId from token)
+ */
+export async function createCustomer(req: Request, res: Response) {
   try {
-    const pharmacyId = (req.user as any)?.pharmacyId;
-    if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
-    }
+    const pharmacyId = getPharmacyIdOrFail(req, res);
+    if (!pharmacyId) return;
 
-    const { name, phone, email }: CustomerInput = req.body;
+    const { name, phone, email, address } = req.body;
 
     if (!name || !phone) {
-      return res.status(400).json({ message: "Name and phone are required." });
+      return res.status(400).json({ message: "name and phone are required" });
     }
 
-    // Check if customer with this phone already exists for this pharmacy
-    const existing = await Customer.findOne({ pharmacyId, phone });
-    if (existing) {
-      return res.status(400).json({ message: "Customer with this phone already exists." });
-    }
-
-    const customer = new Customer({
-      pharmacyId, // ✅ links customer to logged-in pharmacy
+    const customer = await Customer.create({
+      pharmacyId,
       name,
       phone,
       email,
+      address,
     });
 
-    await customer.save();
-
-    return res.status(201).json({
-      message: "Customer registered successfully",
-      customer,
-    });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ message: "Failed to create customer", error: error?.message });
+    return res.status(201).json(customer);
+  } catch (err: any) {
+    // Handle duplicate phone per pharmacy
+    if (err?.code === 11000) {
+      return res
+        .status(409)
+        .json({ message: "Customer with this phone already exists" });
+    }
+    return res.status(500).json({ message: "Error creating customer" });
   }
-};
+}
 
-// Find customer by phone (for checkout)
-export const findCustomerByPhone = async (req: Request, res: Response) => {
+/**
+ * GET /api/customers
+ * List customers for this pharmacy only
+ */
+export async function getCustomers(req: Request, res: Response) {
   try {
-    const pharmacyId = (req.user as any)?.pharmacyId;
-    const { phone } = req.params;
+    const pharmacyId = getPharmacyIdOrFail(req, res);
+    if (!pharmacyId) return;
 
-    const customer = await Customer.findOne({ pharmacyId, phone });
+    const q = (req.query.q as string | undefined)?.trim();
+
+    const filter: any = { pharmacyId };
+    if (q) {
+      filter.$or = [
+        { name: { $regex: q, $options: "i" } },
+        { phone: { $regex: q, $options: "i" } },
+        { email: { $regex: q, $options: "i" } },
+      ];
+    }
+
+    const customers = await Customer.find(filter).sort({ createdAt: -1 });
+
+    return res.json(customers);
+  } catch {
+    return res.status(500).json({ message: "Error fetching customers" });
+  }
+}
+
+/**
+ * GET /api/customers/:id
+ * Get single customer (must belong to this pharmacy)
+ */
+export async function getCustomerById(req: Request, res: Response) {
+  try {
+    const pharmacyId = getPharmacyIdOrFail(req, res);
+    if (!pharmacyId) return;
+
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid customer id" });
+    }
+
+    const customer = await Customer.findOne({ _id: id, pharmacyId });
     if (!customer) {
       return res.status(404).json({ message: "Customer not found" });
     }
 
-    return res.json({ customer });
-  } catch (error: any) {
-    console.error(error);
-    return res.status(500).json({ message: "Failed to find customer", error: error?.message });
+    return res.json(customer);
+  } catch {
+    return res.status(500).json({ message: "Error fetching customer" });
   }
-};
+}
+
+/**
+ * PUT /api/customers/:id
+ * Update customer (must belong to this pharmacy)
+ */
+export async function updateCustomer(req: Request, res: Response) {
+  try {
+    const pharmacyId = getPharmacyIdOrFail(req, res);
+    if (!pharmacyId) return;
+
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid customer id" });
+    }
+
+    // Never allow changing pharmacyId from body
+    const { pharmacyId: _ignore, ...updates } = req.body;
+
+    const updated = await Customer.findOneAndUpdate(
+      { _id: id, pharmacyId },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    return res.json(updated);
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      return res
+        .status(409)
+        .json({ message: "Customer with this phone already exists" });
+    }
+    return res.status(500).json({ message: "Error updating customer" });
+  }
+}
+
+/**
+ * DELETE /api/customers/:id
+ * Delete customer (must belong to this pharmacy)
+ */
+export async function deleteCustomer(req: Request, res: Response) {
+  try {
+    const pharmacyId = getPharmacyIdOrFail(req, res);
+    if (!pharmacyId) return;
+
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid customer id" });
+    }
+
+    const deleted = await Customer.findOneAndDelete({ _id: id, pharmacyId });
+    if (!deleted) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    return res.json({ message: "Customer deleted" });
+  } catch {
+    return res.status(500).json({ message: "Error deleting customer" });
+  }
+}
