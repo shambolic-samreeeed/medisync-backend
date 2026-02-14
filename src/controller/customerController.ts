@@ -49,21 +49,41 @@ export async function createCustomer(req: Request, res: Response) {
 /**
  * GET /api/customers
  * List customers for this pharmacy only
+ *
+ * Supported query params:
+ * - ?q=...        -> fuzzy search by name/phone/email
+ * - ?phone=...    -> exact lookup by phone (POS use-case)
+ *
+ * Examples:
+ * - GET /api/customers
+ * - GET /api/customers?q=ram
+ * - GET /api/customers?phone=9800000000
  */
+
 export async function getCustomers(req: Request, res: Response) {
   try {
     const pharmacyId = getPharmacyIdOrFail(req, res);
     if (!pharmacyId) return;
 
-    const q = (req.query.q as string | undefined)?.trim();
+    const { phone, name, email } = req.query;
 
     const filter: any = { pharmacyId };
-    if (q) {
-      filter.$or = [
-        { name: { $regex: q, $options: "i" } },
-        { phone: { $regex: q, $options: "i" } },
-        { email: { $regex: q, $options: "i" } },
-      ];
+
+    // POS: exact phone lookup (fast)
+    if (phone) {
+      filter.phone = String(phone).trim();
+      const customer = await Customer.findOne(filter);
+      return res.json(customer); // null if not found
+    }
+
+    // Search by name (fuzzy)
+    if (name) {
+      filter.name = { $regex: String(name).trim(), $options: "i" };
+    }
+
+    // Search by email
+    if (email) {
+      filter.email = { $regex: String(email).trim(), $options: "i" };
     }
 
     const customers = await Customer.find(filter).sort({ createdAt: -1 });
@@ -73,6 +93,7 @@ export async function getCustomers(req: Request, res: Response) {
     return res.status(500).json({ message: "Error fetching customers" });
   }
 }
+
 
 /**
  * GET /api/customers/:id

@@ -4,36 +4,32 @@
  * Sale controller for MediSync POS (multi-pharmacy safe)
  *
  * Key Principles:
- * 1. Do NOT accept `pharmacyId` from the client.
- * 2. Always read pharmacyId from `req.user.pharmacyId` (set by authMiddleware).
- * 3. All medicine lookups, stock updates, and sales creation are scoped to the logged-in pharmacy.
- * 4. Dashboard stats (total revenue, daily stats, best-selling) are also per pharmacy.
- * 5. Optionally link a sale to a registered customer by phone.
+ * 1) Do NOT accept pharmacyId from the client.
+ * 2) Always read pharmacyId from req.user.pharmacyId (set by authMiddleware).
+ * 3) All medicine lookups, stock updates, and sales creation are scoped to the logged-in pharmacy.
+ * 4) Dashboard stats (total revenue, daily stats, best-selling) are also per pharmacy.
+ * 5) Customer name/email can be auto-resolved by phone (pharmacy-scoped).
  */
 
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
 import Stats from "../models/Stats";
-import Customer from "../models/Customer"; // optional if you track customers
+import Customer from "../models/Customer";
 import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
+
+/**
+ * Small helper: normalize user-entered phone
+ */
+function normalizePhone(phone: any) {
+  return String(phone ?? "").trim();
+}
 
 /**
  * @route POST /api/sales
  * @desc Record a new sale (POS transaction)
  * @access Protected (requires valid JWT with pharmacyId)
- *
- * @body { 
- *   items: Array<{ medicineId: string, batchNo: string, quantity: number }>,
- *   customerName?: string,
- *   customerPhone?: string,
- *   customerEmail?: string,
- *   paymentMethod: string ("cash", "card", etc),
- *   paidAmount: number
- * }
- *
- * @returns { sale: Sale, message: string }
  */
 export const createSale = async (req: Request, res: Response) => {
   try {
@@ -51,15 +47,35 @@ export const createSale = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "No items provided for sale." });
     }
 
+    if (typeof data.paidAmount !== "number" || !Number.isFinite(data.paidAmount)) {
+      return res.status(400).json({ message: "paidAmount must be a valid number." });
+    }
+
+    // -------------------------------
+    // 2️⃣ Resolve customer details (optional, but auto-fill name/email if phone is given)
+    //    IMPORTANT: Must be scoped by pharmacyId to avoid cross-pharmacy leakage
+    // -------------------------------
+    const phone = data.customerPhone ? normalizePhone(data.customerPhone) : "";
+    let resolvedCustomerName: string | undefined = data.customerName?.trim() || undefined;
+    let resolvedCustomerEmail: string | undefined = data.customerEmail?.trim() || undefined;
+
+    if (phone) {
+      const customer = await Customer.findOne({ pharmacyId, phone }).select("name email");
+      if (customer) {
+        resolvedCustomerName = customer.name || resolvedCustomerName;
+        resolvedCustomerEmail = (customer as any).email || resolvedCustomerEmail;
+      }
+    }
+
+    // -------------------------------
+    // 3️⃣ Check stock and calculate totals (pharmacy-scoped)
+    // -------------------------------
     let totalAmount = 0;
     const saleItems: CartItem[] = [];
 
-    // -------------------------------
-    // 2️⃣ Check stock and calculate totals
-    // -------------------------------
     for (const item of data.items) {
       const medicine = await Medicine.findOne({
-        pharmacyId,           // ✅ Scope by logged-in pharmacy
+        pharmacyId,
         medicineId: item.medicineId,
         batchNo: item.batchNo,
       });
@@ -90,7 +106,21 @@ export const createSale = async (req: Request, res: Response) => {
     }
 
     // -------------------------------
-    // 3️⃣ Deduct stock (pharmacy-scoped)
+    // 4️⃣ Validate paid amount & compute change
+    // -------------------------------
+    const change = data.paidAmount - totalAmount;
+
+    if (change < 0) {
+      return res.status(400).json({
+        message: "Paid amount is less than total amount.",
+        totalAmount,
+        paidAmount: data.paidAmount,
+        change,
+      });
+    }
+
+    // -------------------------------
+    // 5️⃣ Deduct stock (pharmacy-scoped)
     // -------------------------------
     for (const item of data.items) {
       await Medicine.findOneAndUpdate(
@@ -104,38 +134,22 @@ export const createSale = async (req: Request, res: Response) => {
     }
 
     // -------------------------------
-    // 4️⃣ Calculate change
+    // 6️⃣ Save sale record with resolved customerName/email
+    // NOTE: Your Sale schema does NOT contain customerId, so we do not set it.
     // -------------------------------
-    const change = data.paidAmount - totalAmount;
-
-    // -------------------------------
-    // 5️⃣ Find customer by phone (optional)
-    // -------------------------------
-    let customerId: string | undefined;
-    if (data.customerPhone) {
-      const customer = await Customer.findOne({ phone: data.customerPhone });
-      if (customer) customerId = customer._id.toString();
-    }
-
-    // -------------------------------
-    // 6️⃣ Save sale record with pharmacyId & optional customerId
-    // -------------------------------
-    const saleRecord = new Sale({
-      pharmacyId,           // ✅ Links sale to logged-in pharmacy
+    const saleRecord = await Sale.create({
+      pharmacyId,
       saleId: uuidv4(),
       items: saleItems,
       totalAmount,
       paidAmount: data.paidAmount,
       change,
-      customerId,           // optional
-      customerName: data.customerName,
-      customerPhone: data.customerPhone,
-      customerEmail: data.customerEmail,
+      customerName: resolvedCustomerName,
+      customerPhone: phone || undefined,
+      customerEmail: resolvedCustomerEmail,
       paymentMethod: data.paymentMethod,
       invoiceNumber: `INV-${Date.now()}`,
     });
-
-    await saleRecord.save();
 
     // -------------------------------
     // 7️⃣ Update dashboard stats (per pharmacy)
@@ -199,7 +213,6 @@ export const createSale = async (req: Request, res: Response) => {
       message: "Sale recorded successfully",
       sale: saleRecord,
     });
-
   } catch (error: any) {
     console.error(error);
     return res.status(500).json({
