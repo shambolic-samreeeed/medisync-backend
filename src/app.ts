@@ -5,8 +5,8 @@ import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/users.routes";
 import medicineRoutes from './routes/medicine.routes'
 import saleRoutes from './routes/sale.routes'
-import dashboardRoutes from './routes/dashboard.routes'
 import pharmacyRoutes from './routes/pharmacy.routes'
+import dashboardRoutes from './routes/dashboard.routes'
 import customerRoutes from './routes/customer.routes'
 import supplierRoutes from "./routes/supplier.routes";
 import purchaseRoutes from "./routes/purchase.routes";

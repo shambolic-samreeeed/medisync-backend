@@ -1,12 +1,9 @@
 import { Router } from "express";
-import { getDashboardStats, getTodayStats } from "../controller/dashboardController";
+import { getDashboardKPIs } from "src/controller/dashboardController";
+import { authMiddleware } from "src/middlewares/authMiddleware";
 
 const router = Router();
 
-// GET /api/dashboard
-router.get("/", getDashboardStats);
-
-//get todays stat
-router.get("/today", getTodayStats);
+router.get("/kpis", authMiddleware, getDashboardKPIs);
 
 export default router;

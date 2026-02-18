@@ -1,96 +1,62 @@
 import { Request, Response } from "express";
-import Stats from "../models/Stats";
-import Sale, { SaleDocument } from "../models/Sale";
+import Sale from "../models/Sale";
+import Customer from "../models/Customer";
+import Medicine from "../models/Medicine";
 
-/**
- * GET /api/dashboard
- * Returns the full dashboard stats document (cumulative totals, dailyStats, bestSelling, etc.)
- */
-export const getDashboardStats = async (req: Request, res: Response) => {
+function startOfDay(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function endOfDay(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+export async function getDashboardKPIs(req: any, res: Response) {
   try {
-    // Fetch the single Stats document
-    const stats = await Stats.findById("dashboardStats");
+    const pharmacyId = req.user.pharmacyId;
 
-    if (!stats) {
-      return res.status(404).json({ message: "No stats available yet" });
-    }
+    const now = new Date();
+    const todayStart = startOfDay(now);
+    const todayEnd = endOfDay(now);
 
-    res.status(200).json(stats);
+    const expiryDays = Number(req.query.expiryDays ?? 30);
+    const expiryLimit = new Date(now);
+    expiryLimit.setDate(expiryLimit.getDate() + expiryDays);
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to fetch dashboard stats", error });
+    // Run queries in parallel
+    const [todaysSalesAgg, totalCustomers, lowStockCount, nearExpiryCount] =
+      await Promise.all([
+        Sale.aggregate([
+          { $match: { pharmacyId, createdAt: { $gte: todayStart, $lte: todayEnd } } },
+          { $group: { _id: null, total: { $sum: "$totalAmount" } } }
+        ]),
+        Customer.countDocuments({ pharmacyId }),
+        Medicine.countDocuments({
+          pharmacyId,
+          stock: { $gt: 0 },
+          $expr: { $lte: ["$stock", "$reorderLevel"] }
+        }),
+        Medicine.countDocuments({
+          pharmacyId,
+          stock: { $gt: 0 },
+          expiryDate: { $gte: now, $lte: expiryLimit }
+        })
+      ]);
+
+    const todaysSales = todaysSalesAgg?.[0]?.total ?? 0;
+
+    // Delta % (optional — do later)
+    res.json({
+      todaysSales: { value: todaysSales, deltaPct: null },
+      totalCustomers: { value: totalCustomers, deltaPct: null },
+      lowStockItems: { value: lowStockCount, deltaPct: null },
+      nearingExpiry: { value: nearExpiryCount, deltaPct: null }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to load dashboard KPIs" });
   }
-};
-
-/**
- * GET /api/dashboard/today
- * Returns only today's stats:
- * - totalRevenue
- * - totalItemsSold
- * - totalSales
- * - bestSelling (top 5 medicines sold today)
- */
-export const getTodayStats = async (req: Request, res: Response) => {
-  try {
-    // Set start and end of today
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    // Fetch all sales for today
-    const todaySales = await Sale.find({
-      createdAt: { $gte: todayStart, $lte: todayEnd }
-    });
-
-    let totalRevenue = 0;
-    let totalItemsSold = 0;
-    const totalSales = todaySales.length;
-
-    // Map to track best-selling medicines for today
-    const medicineMap: Record<string, { name: string; quantity: number }> = {};
-
-    todaySales.forEach((sale: SaleDocument) => {
-      // totalAmount might be null/undefined
-      totalRevenue += sale.totalAmount ?? 0;
-
-      sale.items.forEach(item => {
-        // quantity might be undefined
-        const quantity = item.quantity ?? 0;
-        const medId = item.medicineId ?? "unknown";
-
-        totalItemsSold += quantity;
-
-        if (medicineMap[medId]) {
-          medicineMap[medId].quantity += quantity;
-        } else {
-          medicineMap[medId] = { name: item.name ?? "Unknown", quantity };
-        }
-      });
-    });
-
-    // Convert map to array and sort by quantity sold
-    const bestSelling = Object.entries(medicineMap)
-      .map(([medicineId, data]) => ({
-        medicineId,
-        name: data.name,
-        totalSold: data.quantity
-      }))
-      .sort((a, b) => b.totalSold - a.totalSold)
-      .slice(0, 5); // top 5 medicines
-
-    // Return today's stats
-    res.status(200).json({
-      totalRevenue,
-      totalItemsSold,
-      totalSales,
-      bestSelling
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to fetch today's stats", error });
-  }
-};
+}

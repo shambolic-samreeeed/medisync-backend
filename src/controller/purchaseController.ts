@@ -151,7 +151,6 @@ export const getPurchaseById = async (req: Request, res: Response) => {
       items,
       itemsCount: items.length,
 
-      // ✅ totals
       subTotal,
       discount,
       tax,
