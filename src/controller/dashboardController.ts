@@ -1,6 +1,5 @@
-import { Response } from "express";
+import { Request, Response } from "express";
 import Sale from "../models/Sale";
-import Customer from "../models/Customer";
 import Medicine from "../models/Medicine";
 
 function startOfDay(d = new Date()) {
@@ -17,16 +16,20 @@ function endOfDay(d = new Date()) {
 function calcDeltaPct(today: number, yesterday: number) {
   if (yesterday === 0) {
     if (today === 0) return 0;
-    return 100; // or return null and show "NEW"
+    return 100; // or return null if you prefer "NEW"
   }
   return Math.round(((today - yesterday) / Math.abs(yesterday)) * 100);
 }
 
-export const getDashboardKPIs = async (req: any, res: Response) => {
+/**
+ * GET /api/dashboard/kpis?expiryDays=30
+ * Protected: uses req.user.pharmacyId
+ */
+export const getDashboardKPIs = async (req: Request, res: Response) => {
   try {
-    const pharmacyId = req.user?.pharmacyId;
+    const pharmacyId = (req.user as any)?.pharmacyId;
     if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
     }
 
     const now = new Date();
@@ -40,103 +43,93 @@ export const getDashboardKPIs = async (req: any, res: Response) => {
     const yesterdayEnd = endOfDay(y);
 
     const expiryDays = Number(req.query.expiryDays ?? 30);
-    const expiryLimitToday = new Date(now);
-    expiryLimitToday.setDate(expiryLimitToday.getDate() + expiryDays);
+    const expiryLimit = new Date(now);
+    expiryLimit.setDate(expiryLimit.getDate() + expiryDays);
 
-    const expiryLimitYesterday = new Date(yesterdayStart);
-    expiryLimitYesterday.setDate(expiryLimitYesterday.getDate() + expiryDays);
+    // --- Today ---
+    const todaySalesAggPromise = Sale.aggregate([
+      { $match: { pharmacyId, createdAt: { $gte: todayStart, $lte: todayEnd } } },
+      { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+    ]);
+
+    const todaySalesCountPromise = Sale.countDocuments({
+      pharmacyId,
+      createdAt: { $gte: todayStart, $lte: todayEnd },
+    });
+
+    // --- Yesterday ---
+    const yesterdaySalesAggPromise = Sale.aggregate([
+      { $match: { pharmacyId, createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd } } },
+      { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+    ]);
+
+    const yesterdaySalesCountPromise = Sale.countDocuments({
+      pharmacyId,
+      createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd },
+    });
+
+    // --- State metrics (no delta) ---
+    const lowStockPromise = Medicine.countDocuments({
+      pharmacyId,
+      stock: { $gt: 0 },
+      $expr: { $lte: ["$stock", "$reorderLevel"] },
+    });
+
+    const nearExpiryPromise = Medicine.countDocuments({
+      pharmacyId,
+      stock: { $gt: 0 },
+      expiryDate: { $gte: now, $lte: expiryLimit },
+    });
 
     const [
       todaySalesAgg,
+      todaySalesCount,
       yesterdaySalesAgg,
-
-      totalCustomersToday,
-      totalCustomersYesterday,
-
-      lowStockToday,
-      lowStockYesterday,
-
-      nearExpiryToday,
-      nearExpiryYesterday,
+      yesterdaySalesCount,
+      lowStockCount,
+      nearExpiryCount,
     ] = await Promise.all([
-      // Sales
-      Sale.aggregate([
-        { $match: { pharmacyId, createdAt: { $gte: todayStart, $lte: todayEnd } } },
-        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
-      ]),
-      Sale.aggregate([
-        { $match: { pharmacyId, createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd } } },
-        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
-      ]),
-
-      // Customers (two choices)
-      // Option A: total customers in DB (this won't change much day-to-day unless you create customers daily)
-      Customer.countDocuments({ pharmacyId }),
-      // "Yesterday" for total customers doesn't really make sense unless you track createdAt.
-      // If you DO have createdAt on Customer, use this instead:
-      Customer.countDocuments({ pharmacyId, createdAt: { $lte: yesterdayEnd } }),
-
-      // Low stock count
-      Medicine.countDocuments({
-        pharmacyId,
-        stock: { $gt: 0 },
-        $expr: { $lte: ["$stock", "$reorderLevel"] },
-      }),
-      // Yesterday low-stock is tricky because stock changes.
-      // For now: compare against the same current data but it won’t reflect yesterday precisely unless you snapshot.
-      // Better approach: compare "today vs yesterday" low stock by using sales/purchases history or snapshots.
-      Medicine.countDocuments({
-        pharmacyId,
-        stock: { $gt: 0 },
-        $expr: { $lte: ["$stock", "$reorderLevel"] },
-      }),
-
-      // Near expiry count
-      Medicine.countDocuments({
-        pharmacyId,
-        stock: { $gt: 0 },
-        expiryDate: { $gte: now, $lte: expiryLimitToday },
-      }),
-      Medicine.countDocuments({
-        pharmacyId,
-        stock: { $gt: 0 },
-        expiryDate: { $gte: yesterdayStart, $lte: expiryLimitYesterday },
-      }),
+      todaySalesAggPromise,
+      todaySalesCountPromise,
+      yesterdaySalesAggPromise,
+      yesterdaySalesCountPromise,
+      lowStockPromise,
+      nearExpiryPromise,
     ]);
 
     const todaySales = todaySalesAgg?.[0]?.total ?? 0;
     const yesterdaySales = yesterdaySalesAgg?.[0]?.total ?? 0;
 
-    // customers: if you don't have createdAt, set yesterday = today (delta 0)
-    const customersToday = totalCustomersToday ?? 0;
-    const customersYesterday = totalCustomersYesterday ?? customersToday;
-
-    const lowStockItemsToday = lowStockToday ?? 0;
-    const lowStockItemsYesterday = lowStockYesterday ?? lowStockItemsToday;
-
-    const nearExpiryTodayCount = nearExpiryToday ?? 0;
-    const nearExpiryYesterdayCount = nearExpiryYesterday ?? nearExpiryTodayCount;
-
     return res.json({
+      // Card 1: Today's Sales (sum)
       todaysSales: {
         value: todaySales,
         deltaPct: calcDeltaPct(todaySales, yesterdaySales),
       },
-      totalCustomers: {
-        value: customersToday,
-        deltaPct: calcDeltaPct(customersToday, customersYesterday),
+
+      // Card 2: Sales recorded today (count)
+      salesToday: {
+        value: todaySalesCount,
+        deltaPct: calcDeltaPct(todaySalesCount, yesterdaySalesCount),
       },
+
+      // Card 3: Low stock (state)
       lowStockItems: {
-        value: lowStockItemsToday,
-        deltaPct: calcDeltaPct(lowStockItemsToday, lowStockItemsYesterday),
+        value: lowStockCount,
+        deltaPct: null,
       },
+
+      // Card 4: Near expiry (state)
       nearingExpiry: {
-        value: nearExpiryTodayCount,
-        deltaPct: calcDeltaPct(nearExpiryTodayCount, nearExpiryYesterdayCount),
+        value: nearExpiryCount,
+        deltaPct: null,
       },
     });
-  } catch (e: any) {
-    console.error(e);
-    return res.status(500).json({ message: "Failed to load KPI stats" });
+  } catch (err: any) {
+    console.error("Dashboard KPI Error:", err);
+    return res.status(500).json({
+      message: "Failed to load dashboard KPIs",
+      error: err?.message || err,
+    });
   }
 };
