@@ -5,22 +5,19 @@
  *
  * Key Principles:
  * 1) Do NOT accept pharmacyId from the client.
- * 2) Always read pharmacyId from req.user.pharmacyId (set by authMiddleware).
- * 3) All medicine lookups, stock updates, and sales creation are scoped to the logged-in pharmacy.
- * 4) Dashboard stats (total revenue, daily stats, best-selling) are also per pharmacy.
- * 5) Customer name/email can be auto-resolved by phone (pharmacy-scoped).
+ * 2) Always read pharmacyId from req.user.pharmacyId.
+ * 3) All medicine lookups, stock updates, and sales creation are pharmacy-scoped.
  */
 
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
-import Stats from "../models/Stats";
 import Customer from "../models/Customer";
 import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
 
 /**
- * Small helper: normalize user-entered phone
+ * Normalize phone
  */
 function normalizePhone(phone: any) {
   return String(phone ?? "").trim();
@@ -28,48 +25,56 @@ function normalizePhone(phone: any) {
 
 /**
  * @route POST /api/sales
- * @desc Record a new sale (POS transaction)
- * @access Protected (requires valid JWT with pharmacyId)
+ * @access Protected
  */
 export const createSale = async (req: Request, res: Response) => {
   try {
-    // -------------------------------
     // 1️⃣ Get pharmacyId from logged-in user
-    // -------------------------------
     const pharmacyId = (req.user as any)?.pharmacyId;
+
     if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+      return res.status(401).json({
+        message: "Unauthorized: pharmacyId missing",
+      });
     }
 
     const data: SaleInput = req.body;
 
     if (!data.items || data.items.length === 0) {
-      return res.status(400).json({ message: "No items provided for sale." });
+      return res.status(400).json({
+        message: "No items provided for sale.",
+      });
     }
 
     if (typeof data.paidAmount !== "number" || !Number.isFinite(data.paidAmount)) {
-      return res.status(400).json({ message: "paidAmount must be a valid number." });
+      return res.status(400).json({
+        message: "paidAmount must be a valid number.",
+      });
     }
 
-    // -------------------------------
-    // 2️⃣ Resolve customer details (optional, but auto-fill name/email if phone is given)
-    //    IMPORTANT: Must be scoped by pharmacyId to avoid cross-pharmacy leakage
-    // -------------------------------
+    // 2️⃣ Resolve customer (optional)
     const phone = data.customerPhone ? normalizePhone(data.customerPhone) : "";
-    let resolvedCustomerName: string | undefined = data.customerName?.trim() || undefined;
-    let resolvedCustomerEmail: string | undefined = data.customerEmail?.trim() || undefined;
+
+    let resolvedCustomerName: string | undefined =
+      data.customerName?.trim() || undefined;
+
+    let resolvedCustomerEmail: string | undefined =
+      data.customerEmail?.trim() || undefined;
 
     if (phone) {
-      const customer = await Customer.findOne({ pharmacyId, phone }).select("name email");
+      const customer = await Customer.findOne({
+        pharmacyId,
+        phone,
+      }).select("name email");
+
       if (customer) {
         resolvedCustomerName = customer.name || resolvedCustomerName;
-        resolvedCustomerEmail = (customer as any).email || resolvedCustomerEmail;
+        resolvedCustomerEmail =
+          (customer as any).email || resolvedCustomerEmail;
       }
     }
 
-    // -------------------------------
-    // 3️⃣ Check stock and calculate totals (pharmacy-scoped)
-    // -------------------------------
+    // 3️⃣ Validate stock + calculate totals
     let totalAmount = 0;
     const saleItems: CartItem[] = [];
 
@@ -82,7 +87,7 @@ export const createSale = async (req: Request, res: Response) => {
 
       if (!medicine) {
         return res.status(404).json({
-          message: `Medicine ${item.medicineId} batch ${item.batchNo} not found for this pharmacy.`,
+          message: `Medicine ${item.medicineId} batch ${item.batchNo} not found.`,
         });
       }
 
@@ -92,8 +97,8 @@ export const createSale = async (req: Request, res: Response) => {
         });
       }
 
-      const total = medicine.unitPrice * item.quantity;
-      totalAmount += total;
+      const itemTotal = medicine.unitPrice * item.quantity;
+      totalAmount += itemTotal;
 
       saleItems.push({
         medicineId: item.medicineId,
@@ -101,13 +106,11 @@ export const createSale = async (req: Request, res: Response) => {
         name: medicine.name,
         unitPrice: medicine.unitPrice,
         quantity: item.quantity,
-        total,
+        total: itemTotal,
       });
     }
 
-    // -------------------------------
-    // 4️⃣ Validate paid amount & compute change
-    // -------------------------------
+    // 4️⃣ Validate payment
     const change = data.paidAmount - totalAmount;
 
     if (change < 0) {
@@ -119,9 +122,7 @@ export const createSale = async (req: Request, res: Response) => {
       });
     }
 
-    // -------------------------------
-    // 5️⃣ Deduct stock (pharmacy-scoped)
-    // -------------------------------
+    // 5️⃣ Deduct stock (single loop)
     for (const item of data.items) {
       await Medicine.findOneAndUpdate(
         {
@@ -133,10 +134,7 @@ export const createSale = async (req: Request, res: Response) => {
       );
     }
 
-    // -------------------------------
-    // 6️⃣ Save sale record with resolved customerName/email
-    // NOTE: Your Sale schema does NOT contain customerId, so we do not set it.
-    // -------------------------------
+    // 6️⃣ Save sale
     const saleRecord = await Sale.create({
       pharmacyId,
       saleId: uuidv4(),
@@ -151,70 +149,13 @@ export const createSale = async (req: Request, res: Response) => {
       invoiceNumber: `INV-${Date.now()}`,
     });
 
-    // -------------------------------
-    // 7️⃣ Update dashboard stats (per pharmacy)
-    // -------------------------------
-    const statsId = `dashboardStats-${pharmacyId}`; // unique per pharmacy
-    const totalQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-    // Overall stats
-    await Stats.findByIdAndUpdate(
-      statsId,
-      {
-        $inc: {
-          totalRevenue: totalAmount,
-          totalSales: 1,
-          totalItemsSold: totalQuantity,
-        },
-        $set: { lastUpdated: new Date() },
-      },
-      { upsert: true, new: true }
-    );
-
-    // Daily stats
-    const dailyUpdateResult = await Stats.updateOne(
-      { _id: statsId, "dailyStats.date": today },
-      {
-        $inc: {
-          "dailyStats.$.revenue": totalAmount,
-          "dailyStats.$.itemsSold": totalQuantity,
-        },
-      }
-    );
-
-    if (dailyUpdateResult.matchedCount === 0) {
-      await Stats.updateOne(
-        { _id: statsId },
-        { $push: { dailyStats: { date: today, revenue: totalAmount, itemsSold: totalQuantity } } },
-        { upsert: true }
-      );
-    }
-
-    // Best-selling medicines
-    for (const item of saleItems) {
-      const updateResult = await Stats.updateOne(
-        { _id: statsId, "bestSelling.medicineId": item.medicineId },
-        { $inc: { "bestSelling.$.totalSold": item.quantity } }
-      );
-
-      if (updateResult.matchedCount === 0) {
-        await Stats.updateOne(
-          { _id: statsId },
-          { $push: { bestSelling: { medicineId: item.medicineId, name: item.name, totalSold: item.quantity } } }
-        );
-      }
-    }
-
-    // -------------------------------
-    // Return the sale record
-    // -------------------------------
     return res.status(201).json({
       message: "Sale recorded successfully",
       sale: saleRecord,
     });
   } catch (error: any) {
-    console.error(error);
+    console.error("Create Sale Error:", error);
+
     return res.status(500).json({
       message: "Failed to process sale",
       error: error?.message || error,
