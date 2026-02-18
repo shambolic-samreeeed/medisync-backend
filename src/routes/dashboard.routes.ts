@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { getDashboardKPIs } from "src/controller/dashboardController";
-import { authMiddleware } from "src/middlewares/authMiddleware";
+import { getDashboardKPIs } from "../controller/dashboardController";
+import { authMiddleware } from "../middlewares/authMiddleware";
 
 const router = Router();
 
