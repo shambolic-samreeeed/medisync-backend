@@ -9,6 +9,7 @@ import dashboardRoutes from './routes/dashboard.routes'
 import pharmacyRoutes from './routes/pharmacy.routes'
 import customerRoutes from './routes/customer.routes'
 import supplierRoutes from "./routes/supplier.routes";
+import purchaseRoutes from "./routes/purchase.routes";
 import cookieParser from "cookie-parser";
 
 const app = express();
@@ -52,6 +53,9 @@ app.use('/api/customers', customerRoutes)
 
 //Supplier routes
 app.use("/api/suppliers", supplierRoutes);
+
+//Purchase routes
+app.use("/api/purchases", purchaseRoutes);
 
 
 // Test root

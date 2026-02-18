@@ -24,6 +24,7 @@ router.get("/:id", authMiddleware, getSupplierById);
 router.put("/:id", authMiddleware, updateSupplier);
 router.delete("/:id", authMiddleware, deleteSupplier);
 
+//get-supplier-purchase-history
 router.get("/:supplierId/purchases", authMiddleware, getSupplierPurchases);
 
 export default router;
