@@ -1,18 +1,27 @@
+// controller/purchaseController.ts
+
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Purchase from "../models/Purchase";
 import Supplier from "../models/Supplier";
 
 /**
- * Lean type (keep it simple to avoid TS union issues from mongoose typings)
- * Adjust item fields later if you want strict typing.
+ * Lean type (keeps TS happy with mongoose .lean())
  */
 type PurchaseLean = {
   _id: mongoose.Types.ObjectId;
   invoiceNumber: string;
   purchaseDate: Date;
   supplierId: any; // populated -> { _id, name }
-  items: any[];
+  items: Array<{
+    medicineId: string;
+    name: string;
+    batchNo: string;
+    quantity: number;
+    unitPrice: number;
+    expiryDate: Date;
+    supplier?: string;
+  }>;
   createdAt: Date;
 };
 
@@ -57,7 +66,7 @@ export const getSupplierPurchases = async (req: Request, res: Response) => {
         .skip(skip)
         .limit(limit)
         .select("_id invoiceNumber purchaseDate items createdAt")
-        .lean<any[]>(), // ✅ explicitly say this is an array
+        .lean<any[]>(),
     ]);
 
     const data = purchases.map((p: any) => ({
@@ -88,6 +97,12 @@ export const getSupplierPurchases = async (req: Request, res: Response) => {
  * GET /api/purchases/:purchaseId
  * Returns details of ONE purchase invoice (including items),
  * scoped to logged-in pharmacy.
+ *
+ * ✅ Adds computed totals:
+ * - subTotal
+ * - discount (0 for now)
+ * - tax (0 for now)
+ * - total
  */
 export const getPurchaseById = async (req: Request, res: Response) => {
   try {
@@ -102,7 +117,6 @@ export const getPurchaseById = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid purchaseId" });
     }
 
-    // ✅ strongly type as single object or null (prevents TS union error)
     const purchase = await Purchase.findOne({ _id: purchaseId, pharmacyId })
       .select("_id invoiceNumber purchaseDate supplierId items createdAt")
       .populate("supplierId", "name")
@@ -112,14 +126,36 @@ export const getPurchaseById = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Purchase not found for this pharmacy" });
     }
 
+    const items = Array.isArray(purchase.items) ? purchase.items : [];
+
+    // ✅ compute totals
+    const subTotal = items.reduce((sum, it) => {
+      const qty = Number(it.quantity) || 0;
+      const price = Number(it.unitPrice) || 0;
+      return sum + qty * price;
+    }, 0);
+
+    // For now, set 0 (later you can store in DB)
+    const discount = 0;
+    const tax = 0;
+
+    const total = Math.max(0, subTotal - discount + tax);
+
     return res.status(200).json({
       _id: purchase._id,
       invoiceNumber: purchase.invoiceNumber,
       purchaseDate: purchase.purchaseDate,
       supplier: purchase.supplierId, // { _id, name }
       createdAt: purchase.createdAt,
-      items: Array.isArray(purchase.items) ? purchase.items : [],
-      itemsCount: Array.isArray(purchase.items) ? purchase.items.length : 0,
+
+      items,
+      itemsCount: items.length,
+
+      // ✅ totals
+      subTotal,
+      discount,
+      tax,
+      total,
     });
   } catch (error: any) {
     return res.status(500).json({
