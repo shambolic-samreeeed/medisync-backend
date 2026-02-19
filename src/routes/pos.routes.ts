@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { getSellableMedicinesForPOS } from "src/controller/posController";
-import { authenticate } from "src/middlewares/authenticate";
+import { getSellableMedicinesForPOS } from "../controller/posController";
+import { authenticate } from "../middlewares/authenticate";
 
 const router = Router();
 
