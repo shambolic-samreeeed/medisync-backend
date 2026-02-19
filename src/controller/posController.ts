@@ -48,7 +48,7 @@ export const getSellableMedicinesForPOS = async (req: Request, res: Response) =>
       expiryDate: { $gte: todayStartNepal },
     })
       .sort({ expiryDate: 1, name: 1 }) 
-      .select("medicineId name brand category batchNo stock unitPrice expiryDate barcode");
+      .select("medicineId name brand category batchNo stock reorderLevel unit unitPrice expiryDate barcode");
 
     return res.status(200).json(medicines);
   } catch (error: any) {
