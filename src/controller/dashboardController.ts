@@ -1,3 +1,4 @@
+// src/controllers/dashboard.controller.ts
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
@@ -16,7 +17,7 @@ function endOfDay(d = new Date()) {
 function calcDeltaPct(today: number, yesterday: number) {
   if (yesterday === 0) {
     if (today === 0) return 0;
-    return 100; // or return null if you prefer "NEW"
+    return 100; // or null/"NEW" depending on your UI
   }
   return Math.round(((today - yesterday) / Math.abs(yesterday)) * 100);
 }
@@ -32,6 +33,19 @@ function addDays(d: Date, days: number) {
   const x = new Date(d);
   x.setDate(x.getDate() + days);
   return x;
+}
+
+/**
+ * Convert "today in Nepal" boundaries to UTC Dates for Mongo queries.
+ * We build a Nepal-local YYYY-MM-DD key then use it as a stable base.
+ */
+function startOfDayInTZ(date = new Date(), timeZone = DASH_TZ) {
+  const key = dateKeyInTZ(date, timeZone); // YYYY-MM-DD (Nepal)
+  return new Date(`${key}T00:00:00.000Z`);
+}
+function endOfDayInTZ(date = new Date(), timeZone = DASH_TZ) {
+  const key = dateKeyInTZ(date, timeZone);
+  return new Date(`${key}T23:59:59.999Z`);
 }
 
 /**
@@ -217,6 +231,176 @@ export const getSalesTrend = async (req: Request, res: Response) => {
     console.error("Sales trend error:", err);
     return res.status(500).json({
       message: "Failed to load sales trend",
+      error: err?.message || err,
+    });
+  }
+};
+
+/**
+ * GET /api/dashboard/inventory-alerts?expiryDays=30&limit=50
+ * Shows:
+ * - expired (expired + still in stock)
+ * - nearExpiry (expiring within expiryDays + in stock)
+ * - outOfStock (stock <= 0)
+ * - lowStock (0 < stock <= reorderLevel)
+ */
+export const getInventoryAlerts = async (req: Request, res: Response) => {
+  try {
+    const pharmacyId = (req.user as any)?.pharmacyId;
+    if (!pharmacyId) {
+      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+    }
+
+    const expiryDays = Number(req.query.expiryDays ?? 30);
+    const limit = Math.min(Number(req.query.limit ?? 50), 200);
+
+    const now = new Date();
+    const todayStartNepal = startOfDayInTZ(now, DASH_TZ);
+
+    const expiryLimit = new Date(now);
+    expiryLimit.setDate(expiryLimit.getDate() + expiryDays);
+
+    // Keep response light
+    const projection = {
+      name: 1,
+      brand: 1,
+      batchNumber: 1,
+      stock: 1,
+      reorderLevel: 1,
+      expiryDate: 1,
+      sellingPrice: 1,
+      purchasePrice: 1,
+      category: 1,
+      unit: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    // expired but still in stock
+    const expiredPromise = Medicine.find({
+      pharmacyId,
+      stock: { $gt: 0 },
+      expiryDate: { $lt: todayStartNepal },
+    })
+      .select(projection)
+      .sort({ expiryDate: 1 })
+      .limit(limit)
+      .lean();
+
+    // near expiry (includes today..expiryLimit)
+    const nearExpiryPromise = Medicine.find({
+      pharmacyId,
+      stock: { $gt: 0 },
+      expiryDate: { $gte: todayStartNepal, $lte: expiryLimit },
+    })
+      .select(projection)
+      .sort({ expiryDate: 1 })
+      .limit(limit)
+      .lean();
+
+    const outOfStockPromise = Medicine.find({
+      pharmacyId,
+      stock: { $lte: 0 },
+    })
+      .select(projection)
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .lean();
+
+    // low stock = stock > 0 and stock <= reorderLevel (treat missing reorderLevel as 0)
+    const lowStockPromise = Medicine.find({
+      pharmacyId,
+      stock: { $gt: 0 },
+      $expr: { $lte: ["$stock", { $ifNull: ["$reorderLevel", 0] }] },
+    })
+      .select(projection)
+      .sort({ stock: 1 })
+      .limit(limit)
+      .lean();
+
+    const [expired, nearExpiry, outOfStock, lowStock] = await Promise.all([
+      expiredPromise,
+      nearExpiryPromise,
+      outOfStockPromise,
+      lowStockPromise,
+    ]);
+
+    return res.json({
+      expiryDays,
+      items: { expired, nearExpiry, outOfStock, lowStock },
+      counts: {
+        expired: expired.length,
+        nearExpiry: nearExpiry.length,
+        outOfStock: outOfStock.length,
+        lowStock: lowStock.length,
+      },
+    });
+  } catch (err: any) {
+    console.error("Inventory alerts error:", err);
+    return res.status(500).json({
+      message: "Failed to load inventory alerts",
+      error: err?.message || err,
+    });
+  }
+};
+
+/**
+ * GET /api/dashboard/inventory-alerts/summary?expiryDays=30
+ * Counts only (useful for dashboard cards)
+ */
+export const getInventoryAlertsSummary = async (req: Request, res: Response) => {
+  try {
+    const pharmacyId = (req.user as any)?.pharmacyId;
+    if (!pharmacyId) {
+      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+    }
+
+    const expiryDays = Number(req.query.expiryDays ?? 30);
+
+    const now = new Date();
+    const todayStartNepal = startOfDayInTZ(now, DASH_TZ);
+
+    const expiryLimit = new Date(now);
+    expiryLimit.setDate(expiryLimit.getDate() + expiryDays);
+
+    const expiredCountPromise = Medicine.countDocuments({
+      pharmacyId,
+      stock: { $gt: 0 },
+      expiryDate: { $lt: todayStartNepal },
+    });
+
+    const nearExpiryCountPromise = Medicine.countDocuments({
+      pharmacyId,
+      stock: { $gt: 0 },
+      expiryDate: { $gte: todayStartNepal, $lte: expiryLimit },
+    });
+
+    const outOfStockCountPromise = Medicine.countDocuments({
+      pharmacyId,
+      stock: { $lte: 0 },
+    });
+
+    const lowStockCountPromise = Medicine.countDocuments({
+      pharmacyId,
+      stock: { $gt: 0 },
+      $expr: { $lte: ["$stock", { $ifNull: ["$reorderLevel", 0] }] },
+    });
+
+    const [expired, nearExpiry, outOfStock, lowStock] = await Promise.all([
+      expiredCountPromise,
+      nearExpiryCountPromise,
+      outOfStockCountPromise,
+      lowStockCountPromise,
+    ]);
+
+    return res.json({
+      expiryDays,
+      counts: { expired, nearExpiry, outOfStock, lowStock },
+    });
+  } catch (err: any) {
+    console.error("Inventory alerts summary error:", err);
+    return res.status(500).json({
+      message: "Failed to load inventory alerts summary",
       error: err?.message || err,
     });
   }
