@@ -1,15 +1,11 @@
 /**
  * @file models/Medicine.ts
- * @description
- * Medicine model for MediSync.
- *
- * Key design:
- * - One collection for all pharmacies.
- * - Each medicine row belongs to a pharmacy using `pharmacyId`.
- * - Unique constraint is per pharmacy (so different pharmacies can have same batch).
+ * @description Medicine model for MediSync.
  */
 
 import mongoose, { Schema, Document } from "mongoose";
+
+export type POSStatus = "ACTIVE" | "BLOCKED";
 
 export interface IMedicine extends Document {
   pharmacyId: mongoose.Types.ObjectId;
@@ -21,15 +17,25 @@ export interface IMedicine extends Document {
   brand?: string;
   category?: string;
   description?: string;
+
   batchNo: string;
+
   stock: number;
   reorderLevel: number;
   unit?: string;
   unitPrice: number;
   supplier?: string;
+
   expiryDate: Date;
   manufactureDate?: Date;
   addedAt: Date;
+
+  // ✅ NEW: POS + disposal workflow
+  posStatus: POSStatus;
+  isDisposed: boolean;
+  disposedAt?: Date;
+  disposedBy?: mongoose.Types.ObjectId;
+  disposeNote?: string;
 }
 
 const medicineSchema = new Schema<IMedicine>(
@@ -57,12 +63,17 @@ const medicineSchema = new Schema<IMedicine>(
     expiryDate: { type: Date, required: true },
     manufactureDate: { type: Date },
     addedAt: { type: Date, default: Date.now },
+
+    posStatus: { type: String, enum: ["ACTIVE", "BLOCKED"], default: "ACTIVE" },
+    isDisposed: { type: Boolean, default: false },
+    disposedAt: { type: Date },
+    disposedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    disposeNote: { type: String },
   },
   { timestamps: true }
 );
 
 medicineSchema.index({ pharmacyId: 1, medicineId: 1, batchNo: 1 }, { unique: true });
-
 
 const Medicine = mongoose.model<IMedicine>("Medicine", medicineSchema);
 export default Medicine;

@@ -11,7 +11,7 @@ export interface CartItem {
 
 export interface SaleDocument extends Document {
   saleId: string;
-  pharmacyId: string; // ✅ add this
+  pharmacyId: string; 
   items: CartItem[];
   totalAmount: number;
   paidAmount: number;
@@ -37,7 +37,7 @@ const cartItemSchema = new Schema<CartItem>({
 const saleSchema = new Schema<SaleDocument>(
   {
     saleId: { type: String, required: true, unique: true },
-    pharmacyId: { type: String, required: true }, // ✅ add here
+    pharmacyId: { type: String, required: true }, 
     items: { type: [cartItemSchema], required: true },
     totalAmount: { type: Number, required: true },
     paidAmount: { type: Number, required: true },
