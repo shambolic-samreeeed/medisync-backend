@@ -1,11 +1,15 @@
+// src/controllers/posController.ts
 import { Request, Response } from "express";
 import Medicine from "../models/Medicine";
 
 const DASH_TZ = "Asia/Kathmandu";
 
+// "YYYY-MM-DD" in Nepal timezone
 function dateKeyInTZ(d: Date, timeZone = DASH_TZ) {
   return d.toLocaleDateString("en-CA", { timeZone });
 }
+
+// Start of Nepal day as a stable UTC Date boundary for Mongo comparisons
 function startOfDayInTZ(date = new Date(), timeZone = DASH_TZ) {
   const key = dateKeyInTZ(date, timeZone);
   return new Date(`${key}T00:00:00.000Z`);
@@ -13,11 +17,21 @@ function startOfDayInTZ(date = new Date(), timeZone = DASH_TZ) {
 
 /**
  * GET /api/pos/medicines
- * Only sellable medicines for POS
+ * ✅ Returns only sellable batches for POS
+ *
+ * Filters:
+ * - pharmacyId from req.user
+ * - stock > 0
+ * - posStatus is ACTIVE OR missing (backward compatible)
+ * - isDisposed !== true (missing treated as false)
+ * - not expired: expiryDate >= todayStartNepal (valid for full day in Nepal)
+ *
+ * Sorted:
+ * - expiryDate asc (FEFO)
  */
 export const getSellableMedicinesForPOS = async (req: Request, res: Response) => {
   try {
-    const pharmacyId = req.user?.pharmacyId;
+    const pharmacyId = (req.user as any)?.pharmacyId;
     if (!pharmacyId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -27,18 +41,25 @@ export const getSellableMedicinesForPOS = async (req: Request, res: Response) =>
     const medicines = await Medicine.find({
       pharmacyId,
       stock: { $gt: 0 },
-      posStatus: "ACTIVE",
-      isDisposed: false,
+
+      // ✅ allow old docs that don't have posStatus yet
+      $or: [{ posStatus: "ACTIVE" }, { posStatus: { $exists: false } }],
+
+      // ✅ treat missing as "not disposed"
+      isDisposed: { $ne: true },
+
+      // ✅ expiry valid for the full Nepal day
       expiryDate: { $gte: todayStartNepal },
     })
-      .sort({ expiryDate: 1 }) // FEFO: sell nearest expiry first
-      .select("medicineId name batchNo stock unitPrice expiryDate");
+      .sort({ expiryDate: 1, name: 1 }) // FEFO + stable sorting
+      .select("medicineId name brand category batchNo stock unitPrice expiryDate barcode");
 
     return res.status(200).json(medicines);
   } catch (error: any) {
+    console.error("getSellableMedicinesForPOS error:", error);
     return res.status(500).json({
       message: "Failed to load POS medicines",
-      error: error.message,
+      error: error?.message || String(error),
     });
   }
 };
