@@ -16,6 +16,7 @@ import {
   getAllMedicines,
   uploadMedicineCSV,
 } from "../controller/medicineController"; 
+import { blockMedicineFromPOS, disposeMedicineBatch, unblockMedicineFromPOS } from "../controller/medicineWorkflowController";
 
 const router = Router();
 
@@ -31,5 +32,9 @@ router.post("/upload-csv", authMiddleware, upload.single("file"), uploadMedicine
 
 router.post("/manual", authMiddleware, addMedicineManually);
 router.get("/", authMiddleware, getAllMedicines);
+
+router.post("/medicines/:id/block-pos", authMiddleware, blockMedicineFromPOS);
+router.post("/medicines/:id/unblock-pos", authMiddleware, unblockMedicineFromPOS); 
+router.post("/medicines/:id/dispose", authMiddleware, disposeMedicineBatch);
 
 export default router;

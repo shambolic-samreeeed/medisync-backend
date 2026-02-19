@@ -17,7 +17,7 @@ function startOfDayInTZ(date = new Date(), timeZone = DASH_TZ) {
 
 /**
  * GET /api/pos/medicines
- * ✅ Returns only sellable batches for POS
+ *  Returns only sellable batches for POS
  *
  * Filters:
  * - pharmacyId from req.user
@@ -42,16 +42,12 @@ export const getSellableMedicinesForPOS = async (req: Request, res: Response) =>
       pharmacyId,
       stock: { $gt: 0 },
 
-      // ✅ allow old docs that don't have posStatus yet
       $or: [{ posStatus: "ACTIVE" }, { posStatus: { $exists: false } }],
 
-      // ✅ treat missing as "not disposed"
       isDisposed: { $ne: true },
-
-      // ✅ expiry valid for the full Nepal day
       expiryDate: { $gte: todayStartNepal },
     })
-      .sort({ expiryDate: 1, name: 1 }) // FEFO + stable sorting
+      .sort({ expiryDate: 1, name: 1 }) 
       .select("medicineId name brand category batchNo stock unitPrice expiryDate barcode");
 
     return res.status(200).json(medicines);
