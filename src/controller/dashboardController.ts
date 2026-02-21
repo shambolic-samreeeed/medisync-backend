@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
+import { DateTime } from "luxon";
 
 function startOfDay(d = new Date()) {
   const x = new Date(d);
@@ -24,7 +25,10 @@ function calcDeltaPct(today: number, yesterday: number) {
 
 const DASH_TZ = "Asia/Kathmandu";
 
-// Format date as YYYY-MM-DD in Nepal timezone
+/**
+ * Format date as YYYY-MM-DD in Nepal timezone.
+ * Uses locale "en-CA" for stable ISO-like output.
+ */
 function dateKeyInTZ(d: Date, timeZone = DASH_TZ) {
   return d.toLocaleDateString("en-CA", { timeZone }); // "YYYY-MM-DD"
 }
@@ -38,6 +42,10 @@ function addDays(d: Date, days: number) {
 /**
  * Convert "today in Nepal" boundaries to UTC Dates for Mongo queries.
  * We build a Nepal-local YYYY-MM-DD key then use it as a stable base.
+ *
+ * Note:
+ * This "Z" construction works as a stable day-key boundary, but it is not a true
+ * timezone conversion. For exact TZ boundaries, use Luxon (see computeRange below).
  */
 function startOfDayInTZ(date = new Date(), timeZone = DASH_TZ) {
   const key = dateKeyInTZ(date, timeZone); // YYYY-MM-DD (Nepal)
@@ -56,7 +64,9 @@ export const getDashboardKPIs = async (req: Request, res: Response) => {
   try {
     const pharmacyId = (req.user as any)?.pharmacyId;
     if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: pharmacyId missing" });
     }
 
     const now = new Date();
@@ -86,7 +96,12 @@ export const getDashboardKPIs = async (req: Request, res: Response) => {
 
     // --- Yesterday ---
     const yesterdaySalesAggPromise = Sale.aggregate([
-      { $match: { pharmacyId, createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd } } },
+      {
+        $match: {
+          pharmacyId,
+          createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd },
+        },
+      },
       { $group: { _id: null, total: { $sum: "$totalAmount" } } },
     ]);
 
@@ -169,7 +184,9 @@ export const getSalesTrend = async (req: Request, res: Response) => {
   try {
     const pharmacyId = (req.user as any)?.pharmacyId;
     if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: pharmacyId missing" });
     }
 
     const daysRaw = Number(req.query.days ?? 7);
@@ -248,7 +265,9 @@ export const getInventoryAlerts = async (req: Request, res: Response) => {
   try {
     const pharmacyId = (req.user as any)?.pharmacyId;
     if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: pharmacyId missing" });
     }
 
     const expiryDays = Number(req.query.expiryDays ?? 30);
@@ -352,7 +371,9 @@ export const getInventoryAlertsSummary = async (req: Request, res: Response) => 
   try {
     const pharmacyId = (req.user as any)?.pharmacyId;
     if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: pharmacyId missing" });
     }
 
     const expiryDays = Number(req.query.expiryDays ?? 30);
@@ -401,6 +422,149 @@ export const getInventoryAlertsSummary = async (req: Request, res: Response) => 
     console.error("Inventory alerts summary error:", err);
     return res.status(500).json({
       message: "Failed to load inventory alerts summary",
+      error: err?.message || err,
+    });
+  }
+};
+
+const TOP_SELLING_TZ = "Asia/Kathmandu";
+
+/**
+ * Compute a date range in Nepal timezone for top-selling aggregation.
+ *
+ * Supported ranges:
+ * - "today": current day in Nepal
+ * - "7d": last 7 calendar days including today (Nepal)
+ * - "30d": last 30 calendar days including today (Nepal)
+ *
+ * Returns JS Date objects suitable for Mongo queries on UTC stored timestamps.
+ */
+function computeTopSellingRange(range: string) {
+  const now = DateTime.now().setZone(TOP_SELLING_TZ);
+
+  if (range === "today") {
+    return {
+      label: "today",
+      from: now.startOf("day").toJSDate(),
+      to: now.endOf("day").toJSDate(),
+    };
+  }
+
+  if (range === "7d") {
+    return {
+      label: "7d",
+      from: now.minus({ days: 6 }).startOf("day").toJSDate(),
+      to: now.endOf("day").toJSDate(),
+    };
+  }
+
+  if (range === "30d") {
+    return {
+      label: "30d",
+      from: now.minus({ days: 29 }).startOf("day").toJSDate(),
+      to: now.endOf("day").toJSDate(),
+    };
+  }
+
+  // default
+  return {
+    label: "7d",
+    from: now.minus({ days: 6 }).startOf("day").toJSDate(),
+    to: now.endOf("day").toJSDate(),
+  };
+}
+
+/**
+ * GET /api/dashboard/top-selling-medicines?range=today|7d|30d&limit=10
+ *
+ * Returns the best-selling medicines for the selected range based on Sales line items.
+ *
+ * Aggregation rules:
+ * - Groups by items.medicineId
+ * - qtySold = sum(items.quantity)
+ * - revenue = sum(items.total)
+ * - ordersCount = number of unique sale documents contributing to the medicine
+ *
+ * Response:
+ * {
+ *   range: "today"|"7d"|"30d",
+ *   from: Date,
+ *   to: Date,
+ *   limit: number,
+ *   items: Array<{
+ *     medicineId: string,
+ *     name: string,
+ *     unitPrice: number,
+ *     qtySold: number,
+ *     revenue: number,
+ *     ordersCount: number
+ *   }>
+ * }
+ */
+export const getTopSellingMedicines = async (req: Request, res: Response) => {
+  try {
+    const pharmacyId = (req.user as any)?.pharmacyId;
+    if (!pharmacyId) {
+      return res
+        .status(401)
+        .json({ message: "Unauthorized: pharmacyId missing" });
+    }
+
+    const rangeParam = String(req.query.range ?? "today");
+    const limitRaw = Number(req.query.limit ?? 10);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(limitRaw, 1), 50)
+      : 10;
+
+    const { from, to, label } = computeTopSellingRange(rangeParam);
+
+    const items = await Sale.aggregate([
+      {
+        $match: {
+          pharmacyId,
+          createdAt: { $gte: from, $lte: to },
+        },
+      },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.medicineId",
+          qtySold: { $sum: "$items.quantity" },
+          revenue: { $sum: "$items.total" },
+          ordersSet: { $addToSet: "$_id" },
+
+          // keep latest snapshots
+          name: { $last: "$items.name" },
+          unitPrice: { $last: "$items.unitPrice" },
+        },
+      },
+      { $addFields: { ordersCount: { $size: "$ordersSet" } } },
+      { $sort: { qtySold: -1, revenue: -1 } },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 0,
+          medicineId: "$_id",
+          name: 1,
+          unitPrice: 1,
+          qtySold: 1,
+          revenue: 1,
+          ordersCount: 1,
+        },
+      },
+    ]);
+
+    return res.json({
+      range: label,
+      from,
+      to,
+      limit,
+      items,
+    });
+  } catch (err: any) {
+    console.error("Top selling medicines error:", err);
+    return res.status(500).json({
+      message: "Failed to fetch top selling medicines",
       error: err?.message || err,
     });
   }

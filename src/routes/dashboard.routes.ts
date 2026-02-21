@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getDashboardKPIs, getInventoryAlerts, getInventoryAlertsSummary, getSalesTrend } from "../controller/dashboardController";
+import { getDashboardKPIs, getInventoryAlerts, getInventoryAlertsSummary, getSalesTrend, getTopSellingMedicines } from "../controller/dashboardController";
 import { authMiddleware } from "../middlewares/authMiddleware";
 
 const router = Router();
@@ -11,4 +11,7 @@ router.get("/sales-trend", authMiddleware, getSalesTrend);
 router.get("/inventory-alerts", authMiddleware, getInventoryAlerts);
 
 router.get("/inventory-alerts/summary", authMiddleware, getInventoryAlertsSummary)
+
+router.get("/top-selling-medicines", authMiddleware, getTopSellingMedicines)
+
 export default router;
