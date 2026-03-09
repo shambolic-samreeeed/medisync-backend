@@ -34,7 +34,7 @@ export const initiateKhaltiPayment = async (req: AuthRequest, res: Response) => 
     const response = await axios.post(
       "https://a.khalti.com/api/v2/epayment/initiate/",
       {
-        return_url: `{FRONTEND_URL}/payment-success`,
+        return_url: `${FRONTEND_URL}/payment-success`,
         website_url: FRONTEND_URL,
         amount: amount * 100, 
         purchase_order_id,
