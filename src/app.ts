@@ -11,6 +11,7 @@ import customerRoutes from './routes/customer.routes'
 import supplierRoutes from "./routes/supplier.routes";
 import purchaseRoutes from "./routes/purchase.routes";
 import settingRoutes from "./routes/setting.routes"
+import khaltiRoutes from './routes/khalti.routes'
 import posRoutes from './routes/pos.routes';
 import cookieParser from "cookie-parser";
 
@@ -64,6 +65,9 @@ app.use("/api/pos", posRoutes);
 
 //Setting routes
 app.use("/api/setting", settingRoutes)
+
+//Khalti route
+app.use("/api/khalti", khaltiRoutes)
 
 
 // Test root
