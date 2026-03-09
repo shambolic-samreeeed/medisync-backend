@@ -10,7 +10,7 @@ import dashboardRoutes from './routes/dashboard.routes'
 import customerRoutes from './routes/customer.routes'
 import supplierRoutes from "./routes/supplier.routes";
 import purchaseRoutes from "./routes/purchase.routes";
-import settingsRoutes from "./routes/setting.routes"
+import settingRoutes from "./routes/setting.routes"
 import posRoutes from './routes/pos.routes';
 import cookieParser from "cookie-parser";
 
@@ -63,7 +63,7 @@ app.use("/api/purchases", purchaseRoutes);
 app.use("/api/pos", posRoutes);
 
 //Setting routes
-app.use("api/settings", settingsRoutes)
+app.use("/api/setting", settingRoutes)
 
 
 // Test root
