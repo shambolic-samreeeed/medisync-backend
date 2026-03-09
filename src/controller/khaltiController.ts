@@ -1,49 +1,57 @@
+// controllers/khaltiController.ts
 import axios from "axios";
-import { Request, Response } from "express";
+import { Response } from "express";
+import { PharmacySettings } from "../models/PharmacySettings";
+import { AuthRequest } from "./settingsController";
 
-// In a real app, this should be in your .env file (e.g., process.env.KHALTI_SECRET_KEY)
-// This is the official Sandbox Test Key provided by Khalti
-const KHALTI_SECRET_KEY = "Key live_secret_key_68791341fdd94846a146f0457ff7b455"; 
-
-export const initiateKhaltiPayment = async (req: Request, res: Response) => {
+export const initiateKhaltiPayment = async (req: AuthRequest, res: Response) => {
   try {
-    // 1. Extract payment details sent from your React frontend
+    // 1. Get the logged-in pharmacy's ID from your auth token
+    const pharmacyId = req.user!.pharmacyId; 
     const { amount, purchase_order_id, purchase_order_name } = req.body;
 
     if (!amount || !purchase_order_id) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    // 2. Make the POST request to Khalti's ePayment Initiate API
+    // 2. Fetch this specific pharmacy's settings from the database
+    const settings = await PharmacySettings.findOne({ pharmacyId });
+
+    // 3. Security Check: Did they actually save their Khalti key in settings?
+    if (!settings || !settings.khaltiSecretKey) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Khalti is not configured. Please add your Khalti Secret Key in Settings." 
+      });
+    }
+
+    // 4. Use THEIR specific secret key for the transaction
+    const merchantSecretKey = settings.khaltiSecretKey;
+
+    // 5. Initiate the payment
+
+    const FRONTEND_URL = "https://medisync-mauve.vercel.app"
     const response = await axios.post(
-      "https://dev.khalti.com/api/v2/epayment/initiate/",
+      "https://a.khalti.com/api/v2/epayment/initiate/",
       {
-        // Where Khalti should send the user after they successfully pay
-        return_url: "http://localhost:3000/payment-success", 
-        // Your pharmacy website's base URL
-        website_url: "http://localhost:3000",
-        // Khalti strictly expects the amount in Paisa (Rs 1 = 100 Paisa)
+        return_url: `{FRONTEND_URL}/payment-success`,
+        website_url: FRONTEND_URL,
         amount: amount * 100, 
         purchase_order_id,
         purchase_order_name,
       },
       {
         headers: {
-          // You must include 'Key ' before the secret key!
-          Authorization: KHALTI_SECRET_KEY,
+          // Dynamically injecting their key!
+          Authorization: `Key ${merchantSecretKey}`,
           "Content-Type": "application/json",
         },
       }
     );
 
-    // 3. Send the successful response (which includes the payment_url) back to React
-    return res.status(200).json({ 
-      success: true, 
-      data: response.data 
-    });
+    return res.status(200).json({ success: true, data: response.data });
 
   } catch (error: any) {
-    // 4. Handle errors (Khalti returns detailed error objects in error.response.data)
     console.error("Khalti API Error:", error.response?.data || error.message);
     return res.status(500).json({ 
       success: false, 

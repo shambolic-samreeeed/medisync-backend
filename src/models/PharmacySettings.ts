@@ -4,6 +4,7 @@ export interface IPharmacySettings extends Document {
   pharmacyId: mongoose.Types.ObjectId;
   esewaMerchantId: string;
   khaltiPublicKey: string;
+  khaltiSecretKey: string;
   createdAt: Date;
   updatedAt: Date;
 }
