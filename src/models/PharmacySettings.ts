@@ -23,8 +23,12 @@ const pharmacySettingsSchema = new Schema<IPharmacySettings>(
     },
     khaltiPublicKey: {
       type: String,
-      default: "", 
+      default: "Key test_secret_key_f59e8b7d18b4499ca40f68195a846e9b", 
     },
+    khaltiSecretKey:{
+      type: String,
+      default:''
+    }
   },
   { timestamps: true }
 );

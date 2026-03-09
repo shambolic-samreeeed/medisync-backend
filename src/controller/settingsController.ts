@@ -12,18 +12,25 @@ export interface AuthRequest extends Request {
   };
 }
 
-// GET: Fetch Settings
+// ==========================================
+// 1. GET: Fetch Pharmacy Settings
+// ==========================================
 export const getSettings = async (req: AuthRequest, res: Response) => {
   try {
     const pharmacyId = req.user!.pharmacyId;
     let settings = await PharmacySettings.findOne({ pharmacyId });
     
+    // If this is a brand new pharmacy and they have no settings yet...
     if (!settings) {
       settings = new PharmacySettings({
         pharmacyId,
         esewaMerchantId: "EPAYTEST",
-        khaltiPublicKey: ""
+        khaltiPublicKey: "",
+        khaltiSecretKey: "", 
+        qrMethods: []
       });
+      // FIX: Actually save the newly created default settings to the database!
+      await settings.save();
     }
 
     return res.status(200).json({ success: true, data: settings });
@@ -32,15 +39,20 @@ export const getSettings = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// PUT: Update Settings
+// ==========================================
+// 2. PUT: Update Payment Keys (Upsert)
+// ==========================================
 export const updateSettings = async (req: AuthRequest, res: Response) => {
   try {
     const pharmacyId = req.user!.pharmacyId;
-    const { esewaMerchantId, khaltiPublicKey } = req.body;
+    
+    // FIX: Extract the khaltiSecretKey from the frontend request
+    const { esewaMerchantId, khaltiPublicKey, khaltiSecretKey } = req.body;
 
     const updatedSettings = await PharmacySettings.findOneAndUpdate(
       { pharmacyId },
-      { esewaMerchantId, khaltiPublicKey },
+      // FIX: Tell Mongoose to save the khaltiSecretKey
+      { esewaMerchantId, khaltiPublicKey, khaltiSecretKey },
       { new: true, upsert: true }
     );
 
@@ -54,7 +66,40 @@ export const updateSettings = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// POST: Generate eSewa Signature securely on the server
+// ==========================================
+// 3. POST: Upload Static QR Image
+// ==========================================
+export const uploadQR = async (req: AuthRequest, res: Response) => {
+  try {
+    const pharmacyId = req.user!.pharmacyId;
+    const { provider } = req.body; // e.g., "eSewa", "Khalti", "Fonepay"
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+    }
+
+    const imageUrl = `/uploads/qrs/${req.file.filename}`;
+
+    // Remove the old QR image for this provider (if it exists) and return the document
+    const settings = await PharmacySettings.findOneAndUpdate(
+      { pharmacyId },
+      { $pull: { qrMethods: { provider } } }, 
+      { upsert: true, new: true }
+    );
+
+    // Push the new uploaded image URL into the array
+    settings.qrMethods.push({ provider, imageUrl });
+    await settings.save();
+
+    return res.status(200).json({ success: true, message: "QR uploaded successfully", data: settings });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: "Error uploading QR", error: error.message });
+  }
+};
+
+// ==========================================
+// 4. POST: Generate eSewa Signature
+// ==========================================
 export const generateEsewaSignature = async (req: AuthRequest, res: Response) => {
   try {
     const { amount, saleId, merchantId } = req.body;
@@ -63,9 +108,7 @@ export const generateEsewaSignature = async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    // In a production app, store this in your .env file (e.g., process.env.ESEWA_SECRET_KEY)
-    // "8gBm/:&EnhH.1/q" is the official test secret for "EPAYTEST"
-    const secretKey = "8gBm/:&EnhH.1/q"; 
+    const secretKey = "8gBm/:&EnhH.1/q"; // Official test secret for "EPAYTEST"
     const message = `${amount},${saleId},${merchantId}`;
 
     const signature = crypto
