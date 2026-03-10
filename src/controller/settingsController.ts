@@ -1,9 +1,7 @@
-// controllers/settingsController.ts
 import { Request, Response } from "express";
 import crypto from "crypto";
 import { PharmacySettings } from "../models/PharmacySettings";
 
-// Define what your authMiddleware attached to 'req'
 export interface AuthRequest extends Request {
   user?: {
     _id: string;
@@ -20,7 +18,6 @@ export const getSettings = async (req: AuthRequest, res: Response) => {
     const pharmacyId = req.user!.pharmacyId;
     let settings = await PharmacySettings.findOne({ pharmacyId });
     
-    // If this is a brand new pharmacy and they have no settings yet...
     if (!settings) {
       settings = new PharmacySettings({
         pharmacyId,
@@ -29,7 +26,6 @@ export const getSettings = async (req: AuthRequest, res: Response) => {
         khaltiSecretKey: "", 
         qrMethods: []
       });
-      // FIX: Actually save the newly created default settings to the database!
       await settings.save();
     }
 
@@ -40,87 +36,79 @@ export const getSettings = async (req: AuthRequest, res: Response) => {
 };
 
 // ==========================================
-// 2. PUT: Update Payment Keys (Upsert)
+// 2. PUT: Update Payment Keys
 // ==========================================
 export const updateSettings = async (req: AuthRequest, res: Response) => {
   try {
     const pharmacyId = req.user!.pharmacyId;
-    
-    // FIX: Extract the khaltiSecretKey from the frontend request
     const { esewaMerchantId, khaltiPublicKey, khaltiSecretKey } = req.body;
 
     const updatedSettings = await PharmacySettings.findOneAndUpdate(
       { pharmacyId },
-      // FIX: Tell Mongoose to save the khaltiSecretKey
       { esewaMerchantId, khaltiPublicKey, khaltiSecretKey },
       { new: true, upsert: true }
     );
 
-    return res.status(200).json({
-      success: true,
-      message: "Payment settings updated successfully",
-      data: updatedSettings
-    });
+    return res.status(200).json({ success: true, message: "Settings updated", data: updatedSettings });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: "Error updating settings", error: error.message });
   }
 };
 
 // ==========================================
-// 3. POST: Upload Static QR Image
+// 3. POST: Upload Custom Dynamic QR Image
 // ==========================================
 export const uploadQR = async (req: AuthRequest, res: Response) => {
   try {
     const pharmacyId = req.user!.pharmacyId;
-    const { provider } = req.body; // e.g., "eSewa", "Khalti", "Fonepay"
+    const { provider } = req.body; // User can type "Mobile Banking", "Fonepay", etc.
 
     if (!req.file) {
-      return res.status(400).json({ success: false, message: "No file uploaded" });
+      return res.status(400).json({ success: false, message: "No image file uploaded" });
+    }
+    if (!provider) {
+      return res.status(400).json({ success: false, message: "Provider name is required" });
     }
 
     const imageUrl = `/uploads/qrs/${req.file.filename}`;
 
-    // Remove the old QR image for this provider (if it exists) and return the document
-    const settings = await PharmacySettings.findOneAndUpdate(
-      { pharmacyId },
-      { $pull: { qrMethods: { provider } } }, 
-      { upsert: true, new: true }
+    const settings = await PharmacySettings.findOne({ pharmacyId });
+    if (!settings) return res.status(404).json({ success: false, message: "Settings not found" });
+
+    // 🚀 Remove the old QR for this specific provider if they are just replacing it
+    settings.qrMethods = settings.qrMethods.filter(
+      (qr: { provider: string; }) => qr.provider.toLowerCase() !== provider.toLowerCase()
     );
 
-    // Push the new uploaded image URL into the array
+    // Push the newly uploaded image
     settings.qrMethods.push({ provider, imageUrl });
     await settings.save();
 
-    return res.status(200).json({ success: true, message: "QR uploaded successfully", data: settings });
+    return res.status(200).json({ success: true, message: `${provider} QR uploaded!`, data: settings });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: "Error uploading QR", error: error.message });
   }
 };
 
 // ==========================================
-// 4. POST: Generate eSewa Signature
+// 4. DELETE: Remove a Custom QR
 // ==========================================
-export const generateEsewaSignature = async (req: AuthRequest, res: Response) => {
+export const deleteQR = async (req: AuthRequest, res: Response) => {
   try {
-    const { amount, saleId, merchantId } = req.body;
+    const pharmacyId = req.user!.pharmacyId;
+    const { provider } = req.params; // Passed in the URL: /api/settings/qr/Fonepay
 
-    if (!amount || !saleId || !merchantId) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
+    const settings = await PharmacySettings.findOne({ pharmacyId });
+    if (!settings) return res.status(404).json({ success: false, message: "Settings not found" });
 
-    const secretKey = "8gBm/:&EnhH.1/q"; // Official test secret for "EPAYTEST"
-    const message = `${amount},${saleId},${merchantId}`;
+    // Filter out the provider the user wants to delete
+    settings.qrMethods = settings.qrMethods.filter(
+      (qr: { provider: string; }) => qr.provider.toLowerCase() !== provider.toLowerCase()
+    );
 
-    const signature = crypto
-      .createHmac("sha256", secretKey)
-      .update(message)
-      .digest("base64");
-
-    return res.status(200).json({
-      success: true,
-      data: { signature }
-    });
+    await settings.save();
+    return res.status(200).json({ success: true, message: `${provider} QR deleted`, data: settings });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: "Error generating signature", error: error.message });
+    return res.status(500).json({ success: false, message: "Error deleting QR", error: error.message });
   }
 };

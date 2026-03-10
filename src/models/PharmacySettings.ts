@@ -1,10 +1,16 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+export interface IQRMethod{
+  provider: string;
+  imageUrl: string;
+}
+
 export interface IPharmacySettings extends Document {
   pharmacyId: mongoose.Types.ObjectId;
   esewaMerchantId: string;
   khaltiPublicKey: string;
   khaltiSecretKey: string;
+  qrMethods: IQRMethod[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,16 +25,22 @@ const pharmacySettingsSchema = new Schema<IPharmacySettings>(
     },
     esewaMerchantId: {
       type: String,
-      default: "EPAYTEST", // Sandbox default
+      default: "EPAYTEST",
     },
     khaltiPublicKey: {
       type: String,
-      default: "Key test_secret_key_f59e8b7d18b4499ca40f68195a846e9b", 
+      default: "", 
     },
     khaltiSecretKey:{
       type: String,
-      default:''
-    }
+      default:""
+    },
+    qrMethods:[
+      {
+        provider: {type: String, required: true},
+        imageUrl: {type: String, required: true},
+      }
+    ]
   },
   { timestamps: true }
 );
