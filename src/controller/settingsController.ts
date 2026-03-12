@@ -61,7 +61,7 @@ export const updateSettings = async (req: AuthRequest, res: Response) => {
 export const uploadQR = async (req: AuthRequest, res: Response) => {
   try {
     const pharmacyId = req.user!.pharmacyId;
-    const { provider } = req.body; // User can type "Mobile Banking", "Fonepay", etc.
+    const { provider } = req.body; 
 
     if (!req.file) {
       return res.status(400).json({ success: false, message: "No image file uploaded" });
@@ -70,17 +70,18 @@ export const uploadQR = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: "Provider name is required" });
     }
 
-    const imageUrl = `/uploads/qrs/${req.file.filename}`;
+    // 🚀 THE MAGIC CHANGE: req.file.path now contains the Cloudinary URL!
+    const imageUrl = req.file.path; 
 
     const settings = await PharmacySettings.findOne({ pharmacyId });
     if (!settings) return res.status(404).json({ success: false, message: "Settings not found" });
 
-    // 🚀 Remove the old QR for this specific provider if they are just replacing it
+    // Remove the old QR for this specific provider if they are just replacing it
     settings.qrMethods = settings.qrMethods.filter(
       (qr: { provider: string; }) => qr.provider.toLowerCase() !== provider.toLowerCase()
     );
 
-    // Push the newly uploaded image
+    // Push the newly uploaded image URL
     settings.qrMethods.push({ provider, imageUrl });
     await settings.save();
 
