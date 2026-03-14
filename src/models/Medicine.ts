@@ -23,14 +23,17 @@ export interface IMedicine extends Document {
   stock: number;
   reorderLevel: number;
   unit?: string;
-  unitPrice: number;
+  
+  // ✅ CHANGED: Split unitPrice into cost and selling price
+  costPrice: number;
+  sellingPrice: number;
+  
   supplier?: string;
 
   expiryDate: Date;
   manufactureDate?: Date;
   addedAt: Date;
 
-  // ✅ NEW: POS + disposal workflow
   posStatus: POSStatus;
   isDisposed: boolean;
   disposedAt?: Date;
@@ -57,7 +60,10 @@ const medicineSchema = new Schema<IMedicine>(
     reorderLevel: { type: Number, default: 0 },
     unit: { type: String },
 
-    unitPrice: { type: Number, required: true },
+    // Added required cost and selling prices
+    costPrice: { type: Number, required: true },
+    sellingPrice: { type: Number, required: true },
+    
     supplier: { type: String },
 
     expiryDate: { type: Date, required: true },

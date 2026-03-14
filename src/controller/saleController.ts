@@ -2,11 +2,6 @@
  * @file controller/saleController.ts
  * @description
  * Sale controller for MediSync POS (multi-pharmacy safe)
- *
- * Key Principles:
- * 1) Do NOT accept pharmacyId from the client.
- * 2) Always read pharmacyId from req.user.pharmacyId.
- * 3) All medicine lookups, stock updates, and sales creation are pharmacy-scoped.
  */
 
 import { Request, Response } from "express";
@@ -16,65 +11,40 @@ import Customer from "../models/Customer";
 import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
 
-/**
- * Normalize phone
- */
 function normalizePhone(phone: any) {
   return String(phone ?? "").trim();
 }
 
-/**
- * @route POST /api/sales
- * @access Protected
- */
 export const createSale = async (req: Request, res: Response) => {
   try {
-    // 1️⃣ Get pharmacyId from logged-in user
     const pharmacyId = (req.user as any)?.pharmacyId;
 
     if (!pharmacyId) {
-      return res.status(401).json({
-        message: "Unauthorized: pharmacyId missing",
-      });
+      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
     }
 
     const data: SaleInput = req.body;
 
     if (!data.items || data.items.length === 0) {
-      return res.status(400).json({
-        message: "No items provided for sale.",
-      });
+      return res.status(400).json({ message: "No items provided for sale." });
     }
 
     if (typeof data.paidAmount !== "number" || !Number.isFinite(data.paidAmount)) {
-      return res.status(400).json({
-        message: "paidAmount must be a valid number.",
-      });
+      return res.status(400).json({ message: "paidAmount must be a valid number." });
     }
 
-    // 2️⃣ Resolve customer (optional)
     const phone = data.customerPhone ? normalizePhone(data.customerPhone) : "";
-
-    let resolvedCustomerName: string | undefined =
-      data.customerName?.trim() || undefined;
-
-    let resolvedCustomerEmail: string | undefined =
-      data.customerEmail?.trim() || undefined;
+    let resolvedCustomerName: string | undefined = data.customerName?.trim() || undefined;
+    let resolvedCustomerEmail: string | undefined = data.customerEmail?.trim() || undefined;
 
     if (phone) {
-      const customer = await Customer.findOne({
-        pharmacyId,
-        phone,
-      }).select("name email");
-
+      const customer = await Customer.findOne({ pharmacyId, phone }).select("name email");
       if (customer) {
         resolvedCustomerName = customer.name || resolvedCustomerName;
-        resolvedCustomerEmail =
-          (customer as any).email || resolvedCustomerEmail;
+        resolvedCustomerEmail = (customer as any).email || resolvedCustomerEmail;
       }
     }
 
-    // 3️⃣ Validate stock + calculate totals
     let totalAmount = 0;
     const saleItems: CartItem[] = [];
 
@@ -86,31 +56,30 @@ export const createSale = async (req: Request, res: Response) => {
       });
 
       if (!medicine) {
-        return res.status(404).json({
-          message: `Medicine ${item.medicineId} batch ${item.batchNo} not found.`,
-        });
+        return res.status(404).json({ message: `Medicine ${item.medicineId} batch ${item.batchNo} not found.` });
       }
 
       if (medicine.stock < item.quantity) {
-        return res.status(400).json({
-          message: `Not enough stock for ${medicine.name} batch ${item.batchNo}.`,
-        });
+        return res.status(400).json({ message: `Not enough stock for ${medicine.name} batch ${item.batchNo}.` });
       }
 
-      const itemTotal = medicine.unitPrice * item.quantity;
+      // 🚀 THE FIX: Use medicine.sellingPrice instead of unitPrice to calculate the bill!
+      const itemTotal = medicine.sellingPrice * item.quantity;
       totalAmount += itemTotal;
 
       saleItems.push({
         medicineId: item.medicineId,
         batchNo: medicine.batchNo,
         name: medicine.name,
-        unitPrice: medicine.unitPrice,
+        
+        // We keep the key as "unitPrice" here so we don't break your frontend Receipt/Cart types, 
+        // but we feed it the actual sellingPrice from the database!
+        unitPrice: medicine.sellingPrice, 
         quantity: item.quantity,
         total: itemTotal,
       });
     }
 
-    // 4️⃣ Validate payment
     const change = data.paidAmount - totalAmount;
 
     if (change < 0) {
@@ -122,7 +91,6 @@ export const createSale = async (req: Request, res: Response) => {
       });
     }
 
-    // 5️⃣ Deduct stock (single loop)
     for (const item of data.items) {
       await Medicine.findOneAndUpdate(
         {
@@ -134,7 +102,6 @@ export const createSale = async (req: Request, res: Response) => {
       );
     }
 
-    // 6️⃣ Save sale
     const saleRecord = await Sale.create({
       pharmacyId,
       saleId: uuidv4(),
@@ -155,7 +122,6 @@ export const createSale = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Create Sale Error:", error);
-
     return res.status(500).json({
       message: "Failed to process sale",
       error: error?.message || error,

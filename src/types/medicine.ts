@@ -15,7 +15,11 @@ export interface CSVMedicineRow {
   stock: string;
   reorderLevel?: string;
   unit?: string;
-  unitPrice: string;
+  
+  // ✅ CHANGED: Replaced unitPrice with costPrice and sellingPrice
+  costPrice: string;
+  sellingPrice: string;
+  
   supplier?: string;
   expiryDate: string;
   manufactureDate?: string;
@@ -23,7 +27,6 @@ export interface CSVMedicineRow {
 }
 
 export interface MedicineInput {
-  
   pharmacyId: string;
   uploadedBy?: string;
 
@@ -37,7 +40,10 @@ export interface MedicineInput {
   stock: number;
   reorderLevel?: number;
   unit?: string;
-  unitPrice: number;
+  
+  costPrice: number;
+  sellingPrice: number;
+  
   supplier?: string;
   expiryDate: Date;
   manufactureDate?: Date;

@@ -2,10 +2,6 @@
  * @file controllers/medicineController.ts
  * @description
  * Medicine controllers for MediSync (pharmacy-safe).
- *
- * Key rule:
- * - Never accept pharmacyId from client.
- * - Always use req.user.pharmacyId (set by authMiddleware).
  */
 
 import { Request, Response } from "express";
@@ -31,27 +27,17 @@ const toNum = (v: any) => {
   return Number.isFinite(n) ? n : null;
 };
 
-/**
- * Upload CSV + Record Purchase (Supplier + Invoice) + Update Stock
- *
- * multipart/form-data:
- * - file (CSV) (key: "file")
- * - supplierId (required)
- * - invoiceNumber (required)
- * - purchaseDate (optional)
- */
 export const uploadMedicineCSV = async (req: Request, res: Response) => {
-  const session = await mongoose.startSession();
-
+  let session: mongoose.ClientSession | null = null;
+  
   try {
+    session = await mongoose.startSession();
+    
     const pharmacyId = req.user?.pharmacyId;
     const uploadedBy = req.user?._id;
 
     if (!pharmacyId) {
-      return res.status(401).json({
-        message:
-          "Unauthorized: pharmacyId missing. Make sure auth middleware sets req.user.pharmacyId",
-      });
+      return res.status(401).json({ message: "Unauthorized: pharmacyId missing." });
     }
 
     const file = req.file;
@@ -59,29 +45,19 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "CSV file is required" });
     }
 
-    // ✅ Supplier tracking fields
     const supplierId = (req.body?.supplierId || "").toString().trim();
     const invoiceNumber = (req.body?.invoiceNumber || "").toString().trim();
     const purchaseDateRaw = req.body?.purchaseDate;
 
-    if (!supplierId) {
-      return res.status(400).json({ message: "supplierId is required" });
-    }
-    if (!invoiceNumber) {
-      return res.status(400).json({ message: "invoiceNumber is required" });
-    }
+    if (!supplierId) return res.status(400).json({ message: "supplierId is required" });
+    if (!invoiceNumber) return res.status(400).json({ message: "invoiceNumber is required" });
 
     const supplier = await Supplier.findOne({ _id: supplierId, pharmacyId });
-    if (!supplier) {
-      return res.status(404).json({ message: "Supplier not found for this pharmacy" });
-    }
+    if (!supplier) return res.status(404).json({ message: "Supplier not found for this pharmacy" });
 
     const purchaseDate = purchaseDateRaw ? parseDate(purchaseDateRaw) : new Date();
-    if (purchaseDateRaw && !purchaseDate) {
-      return res.status(400).json({ message: "purchaseDate is invalid" });
-    }
+    if (purchaseDateRaw && !purchaseDate) return res.status(400).json({ message: "purchaseDate is invalid" });
 
-    // Parse CSV
     const medicines: CSVMedicineRow[] = [];
 
     await new Promise<void>((resolve, reject) => {
@@ -92,14 +68,13 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
         .on("error", (err) => reject(err));
     });
 
-    if (medicines.length === 0) {
-      return res.status(400).json({ message: "CSV is empty" });
-    }
+    if (medicines.length === 0) return res.status(400).json({ message: "CSV is empty" });
 
-    // Build purchase items from CSV (validation)
+    // ✅ CHANGED: Validate costPrice and sellingPrice from CSV
     const purchaseItems = medicines.map((med, idx) => {
       const stock = toNum(med.stock);
-      const unitPrice = toNum(med.unitPrice);
+      const costPrice = toNum(med.costPrice);     // Replaces unitPrice
+      const sellingPrice = toNum(med.sellingPrice); // New field
       const expiryDate = parseDate(med.expiryDate);
 
       if (!med.medicineId || !med.name || !med.batchNo) {
@@ -108,8 +83,14 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
       if (!stock || stock <= 0) {
         throw new Error(`Row ${idx + 1}: stock must be a number > 0`);
       }
-      if (!unitPrice || unitPrice <= 0) {
-        throw new Error(`Row ${idx + 1}: unitPrice must be a number > 0`);
+      if (!costPrice || costPrice <= 0) {
+        throw new Error(`Row ${idx + 1}: costPrice must be a number > 0`);
+      }
+      if (!sellingPrice || sellingPrice <= 0) {
+        throw new Error(`Row ${idx + 1}: sellingPrice must be a number > 0`);
+      }
+      if (sellingPrice < costPrice) {
+        throw new Error(`Row ${idx + 1}: sellingPrice cannot be lower than costPrice`);
       }
       if (!expiryDate) {
         throw new Error(`Row ${idx + 1}: expiryDate is invalid`);
@@ -120,37 +101,29 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
         name: med.name,
         batchNo: med.batchNo,
         quantity: stock,
-        unitPrice: unitPrice,
+        unitPrice: costPrice, // Saved in Purchase history as what you PAID the supplier
         expiryDate: expiryDate,
-        supplier: med.supplier || supplier.name, // optional
+        supplier: med.supplier || supplier.name, 
       };
     });
 
-    // Transaction: purchase history + stock update must both succeed
     session.startTransaction();
 
-    // 1) Save purchase record
     const createdPurchase = await Purchase.create(
-      [
-        {
-          pharmacyId,
-          supplierId: supplier._id,
-          invoiceNumber,
-          purchaseDate,
-          items: purchaseItems,
-        },
-      ],
+      [{
+        pharmacyId,
+        supplierId: supplier._id,
+        invoiceNumber,
+        purchaseDate,
+        items: purchaseItems,
+      }],
       { session }
     );
 
-    // 2) Update stock using your existing helper
-    // NOTE: upsertMedicine probably doesn't use session internally, so purchase+stock won't be perfectly atomic.
-    // If you want full atomicity, share medicineHelper.ts and I'll update it to accept session.
     for (const med of medicines) {
       await upsertMedicine({
         pharmacyId,
         uploadedBy,
-
         medicineId: med.medicineId,
         barcode: med.barcode,
         name: med.name,
@@ -158,15 +131,15 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
         category: med.category,
         description: med.description,
         batchNo: med.batchNo,
-
         stock: Number(med.stock),
         reorderLevel: med.reorderLevel ? Number(med.reorderLevel) : 0,
         unit: med.unit,
-        unitPrice: Number(med.unitPrice),
-
-        // keep supplier string consistent
+        
+        // ✅ CHANGED: Pass both prices to your upsert helper
+        costPrice: Number(med.costPrice),
+        sellingPrice: Number(med.sellingPrice),
+        
         supplier: med.supplier || supplier.name,
-
         expiryDate: new Date(med.expiryDate),
         manufactureDate: med.manufactureDate ? new Date(med.manufactureDate) : undefined,
         addedAt: med.addedAt ? new Date(med.addedAt) : new Date(),
@@ -182,99 +155,69 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
       purchaseId: createdPurchase[0]._id,
     });
   } catch (error: any) {
-    try {
-      await session.abortTransaction();
-    } catch {}
-    session.endSession();
-
-    if (error?.code === 11000) {
-      return res.status(409).json({
-        message: "Duplicate invoice detected for this supplier (invoiceNumber already exists).",
-      });
+    if (session) {
+      try { await session.abortTransaction(); } catch {}
+      session.endSession();
     }
 
-    return res.status(500).json({
-      message: "CSV processing failed",
-      error: error?.message || String(error),
-    });
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: "Duplicate invoice detected for this supplier (invoiceNumber already exists)." });
+    }
+
+    return res.status(500).json({ message: "CSV processing failed", error: error?.message || String(error) });
   }
 };
 
-// Manual Add (unchanged)
+// Manual Add
 export const addMedicineManually = async (req: Request, res: Response) => {
   try {
     const pharmacyId = req.user?.pharmacyId;
     const uploadedBy = req.user?._id;
 
-    if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
-    }
+    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
 
+    // ✅ CHANGED: Extracting costPrice and sellingPrice
     const {
-      medicineId,
-      barcode,
-      name,
-      brand,
-      category,
-      description,
-      batchNo,
-      stock,
-      reorderLevel,
-      unit,
-      unitPrice,
-      supplier,
-      expiryDate,
-      manufactureDate,
-      addedAt,
+      medicineId, barcode, name, brand, category, description, batchNo,
+      stock, reorderLevel, unit, costPrice, sellingPrice, supplier, 
+      expiryDate, manufactureDate, addedAt
     } = req.body;
 
-    if (!name || !batchNo || stock === undefined || !unitPrice || !expiryDate) {
+    if (!name || !batchNo || stock === undefined || !costPrice || !sellingPrice || !expiryDate) {
       return res.status(400).json({
-        message: "Missing required fields: name, batchNo, stock, unitPrice, or expiryDate",
+        message: "Missing required fields: name, batchNo, stock, costPrice, sellingPrice, or expiryDate",
       });
     }
 
-    const medicine = await upsertMedicine({
-      pharmacyId,
-      uploadedBy,
+    if (Number(sellingPrice) < Number(costPrice)) {
+      return res.status(400).json({ message: "Selling price cannot be lower than cost price." });
+    }
 
-      medicineId,
-      barcode,
-      name,
-      brand,
-      category,
-      description,
-      batchNo,
-      stock: Number(stock),
-      reorderLevel: reorderLevel ? Number(reorderLevel) : 0,
-      unit,
-      unitPrice: Number(unitPrice),
-      supplier,
-      expiryDate: new Date(expiryDate),
+    const medicine = await upsertMedicine({
+      pharmacyId, uploadedBy, medicineId, barcode, name, brand, category, description,
+      batchNo, stock: Number(stock), reorderLevel: reorderLevel ? Number(reorderLevel) : 0,
+      unit, 
+      
+      // ✅ CHANGED: Passing both prices
+      costPrice: Number(costPrice), 
+      sellingPrice: Number(sellingPrice), 
+      
+      supplier, expiryDate: new Date(expiryDate),
       manufactureDate: manufactureDate ? new Date(manufactureDate) : undefined,
       addedAt: addedAt ? new Date(addedAt) : new Date(),
     });
 
-    return res.status(201).json({
-      message: "Medicine added/updated successfully",
-      data: medicine,
-    });
+    return res.status(201).json({ message: "Medicine added/updated successfully", data: medicine });
   } catch (error: any) {
-    if (error.code === 11000) {
-      return res.status(409).json({ message: "Duplicate medicine batch detected (per pharmacy)" });
-    }
+    if (error.code === 11000) return res.status(409).json({ message: "Duplicate medicine batch detected" });
     return res.status(500).json({ message: "Failed to add medicine", error: error.message });
   }
 };
 
-// Get medicines for logged-in pharmacy only (unchanged)
 export const getAllMedicines = async (req: Request, res: Response) => {
   try {
     const pharmacyId = req.user?.pharmacyId;
-
-    if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
-    }
+    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
 
     const medicines = await Medicine.find({ pharmacyId }).sort({ name: 1, batchNo: 1 });
     return res.status(200).json(medicines);
