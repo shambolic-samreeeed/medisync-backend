@@ -10,6 +10,13 @@ export interface IPurchaseItem {
   supplier?: string;
 }
 
+export interface IPaymentHistory {
+  amount: number;
+  date: Date;
+  method: "CASH" | "BANK" | "CHEQUE";
+  notes?: string;
+}
+
 export interface IPurchase extends Document {
   pharmacyId: mongoose.Types.ObjectId;
   supplierId: mongoose.Types.ObjectId;
@@ -20,7 +27,10 @@ export interface IPurchase extends Document {
   totalAmount: number;
   paidAmount: number;
   paymentStatus: "UNPAID" | "PARTIAL" | "PAID";
-
+  
+  //  Add the array to the main interface
+  paymentHistory: IPaymentHistory[]; 
+  
   items: IPurchaseItem[];
   createdAt: Date;
   updatedAt: Date;
@@ -39,6 +49,16 @@ const purchaseItemSchema = new Schema<IPurchaseItem>(
   { _id: false }
 );
 
+const paymentHistorySchema = new Schema<IPaymentHistory>(
+  {
+    amount: { type: Number, required: true },
+    date: { type: Date, default: Date.now },
+    method: { type: String, enum: ["CASH", "BANK", "CHEQUE"], default: "CASH" },
+    notes: { type: String, trim: true },
+  },
+  { _id: true } 
+);
+
 const purchaseSchema = new Schema<IPurchase>(
   {
     pharmacyId: { type: Schema.Types.ObjectId, ref: "Pharmacy", required: true },
@@ -50,6 +70,9 @@ const purchaseSchema = new Schema<IPurchase>(
     totalAmount: { type: Number, required: true, default: 0 },
     paidAmount: { type: Number, default: 0 },
     paymentStatus: { type: String, enum: ["UNPAID", "PARTIAL", "PAID"], default: "UNPAID" },
+    
+    paymentHistory: { type: [paymentHistorySchema], default: [] },
+    
     items: { type: [purchaseItemSchema], default: [] },
   },
   { timestamps: true }

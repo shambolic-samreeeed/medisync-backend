@@ -4,16 +4,22 @@ import Purchase from "../models/Purchase";
 import Supplier from "../models/Supplier";
 
 /**
- * Lean type updated with new financial fields
+ * Lean type updated with new financial fields and payment history
  */
 type PurchaseLean = {
   _id: mongoose.Types.ObjectId;
   invoiceNumber: string;
   purchaseDate: Date;
-  dueDate: Date;         // 🚀 New
-  totalAmount: number;   // 🚀 New
-  paidAmount: number;    // 🚀 New
-  paymentStatus: string; // 🚀 New
+  dueDate: Date;         
+  totalAmount: number;   
+  paidAmount: number;    
+  paymentStatus: string; 
+  paymentHistory: Array<{
+    amount: number;
+    date: Date;
+    method: string;
+    notes?: string;
+  }>;
   supplierId: any;
   items: Array<{
     medicineId: string;
@@ -28,7 +34,7 @@ type PurchaseLean = {
 };
 
 /**
- * 🚀 NEW: GET /api/purchases
+ * 🚀 GET /api/purchases
  * Returns ALL purchase invoices for the dashboard.
  */
 export const getAllPurchases = async (req: Request, res: Response) => {
@@ -92,7 +98,7 @@ export const getSupplierPurchases = async (req: Request, res: Response) => {
 
 /**
  * GET /api/purchases/:purchaseId
- * Returns full details of ONE invoice
+ * Returns full details of ONE invoice (including history & items)
  */
 export const getPurchaseById = async (req: Request, res: Response) => {
   try {
@@ -105,7 +111,6 @@ export const getPurchaseById = async (req: Request, res: Response) => {
 
     if (!purchase) return res.status(404).json({ message: "Purchase not found" });
 
-    // We now return the stored totalAmount from DB instead of re-calculating
     return res.status(200).json(purchase);
   } catch (error: any) {
     return res.status(500).json({ message: "Error", error: error.message });
@@ -113,24 +118,36 @@ export const getPurchaseById = async (req: Request, res: Response) => {
 };
 
 /**
- * 🚀 NEW: PATCH /api/purchases/:purchaseId/payment
- * Logs a payment and updates status (UNPAID -> PARTIAL -> PAID)
+ * 🚀 PATCH /api/purchases/:purchaseId/payment
+ * Logs a payment, saves the history, and updates status (UNPAID -> PARTIAL -> PAID)
  */
 export const updatePurchasePayment = async (req: Request, res: Response) => {
   try {
     const pharmacyId = req.user?.pharmacyId;
     const { purchaseId } = req.params;
-    const { amountPaid } = req.body; // Amount to add to current paidAmount
+    
+    // Extract payment details, defaulting if not provided
+    const { amountPaid, paymentMethod = "CASH", notes = "" } = req.body; 
 
-    if (!amountPaid || amountPaid <= 0) {
-      return res.status(400).json({ message: "Invalid payment amount" });
+    const numericAmount = Number(amountPaid);
+
+    // 1. Strict Validation
+    if (!numericAmount || numericAmount <= 0) {
+      return res.status(400).json({ message: "Invalid payment amount. Ensure the frontend is sending JSON correctly." });
     }
 
     const purchase = await Purchase.findOne({ _id: purchaseId, pharmacyId });
     if (!purchase) return res.status(404).json({ message: "Invoice not found" });
 
-    // Update financial logic
-    const newTotalPaid = (purchase.paidAmount || 0) + Number(amountPaid);
+    const currentPaid = purchase.paidAmount || 0;
+    const newTotalPaid = currentPaid + numericAmount;
+
+    // 2. Prevent overpaying
+    if (newTotalPaid > purchase.totalAmount) {
+      return res.status(400).json({ message: "Payment exceeds the total invoice amount" });
+    }
+
+    // 3. Update financial logic
     purchase.paidAmount = newTotalPaid;
 
     if (newTotalPaid >= purchase.totalAmount) {
@@ -139,10 +156,18 @@ export const updatePurchasePayment = async (req: Request, res: Response) => {
       purchase.paymentStatus = "PARTIAL";
     }
 
+    // 4. 🚀 Record the payment history
+    purchase.paymentHistory.push({
+      amount: numericAmount,
+      date: new Date(),
+      method: paymentMethod as "CASH" | "BANK" | "CHEQUE",
+      notes: notes
+    });
+
     await purchase.save();
 
     return res.status(200).json({ 
-      message: "Payment updated successfully ", 
+      message: "Payment updated successfully ✅", 
       data: purchase 
     });
   } catch (error: any) {
