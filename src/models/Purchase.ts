@@ -5,9 +5,9 @@ export interface IPurchaseItem {
   name: string;
   batchNo: string;
   quantity: number;
-  unitPrice: number; // selling price (your current CSV has this)
+  unitPrice: number; 
   expiryDate: Date;
-  supplier?: string; // optional from CSV (can keep for debugging)
+  supplier?: string;
 }
 
 export interface IPurchase extends Document {
@@ -15,6 +15,12 @@ export interface IPurchase extends Document {
   supplierId: mongoose.Types.ObjectId;
   invoiceNumber: string;
   purchaseDate: Date;
+
+  dueDate: Date;
+  totalAmount: number;
+  paidAmount: number;
+  paymentStatus: "UNPAID" | "PARTIAL" | "PAID";
+
   items: IPurchaseItem[];
   createdAt: Date;
   updatedAt: Date;
@@ -39,6 +45,11 @@ const purchaseSchema = new Schema<IPurchase>(
     supplierId: { type: Schema.Types.ObjectId, ref: "Supplier", required: true },
     invoiceNumber: { type: String, required: true, trim: true },
     purchaseDate: { type: Date, default: Date.now },
+
+    dueDate: { type: Date, required: true },
+    totalAmount: { type: Number, required: true, default: 0 },
+    paidAmount: { type: Number, default: 0 },
+    paymentStatus: { type: String, enum: ["UNPAID", "PARTIAL", "PAID"], default: "UNPAID" },
     items: { type: [purchaseItemSchema], default: [] },
   },
   { timestamps: true }
