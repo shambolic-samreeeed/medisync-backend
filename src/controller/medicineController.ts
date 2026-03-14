@@ -39,31 +39,33 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
     const pharmacyId = req.user?.pharmacyId;
     const uploadedBy = req.user?._id;
 
-    if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized: pharmacyId missing." });
-    }
+    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized." });
 
     const file = req.file;
-    if (!file) {
-      return res.status(400).json({ message: "CSV file is required" });
-    }
+    if (!file) return res.status(400).json({ message: "CSV file is required" });
 
     const supplierId = (req.body?.supplierId || "").toString().trim();
     const invoiceNumber = (req.body?.invoiceNumber || "").toString().trim();
     const purchaseDateRaw = req.body?.purchaseDate;
 
-    if (!supplierId) return res.status(400).json({ message: "supplierId is required" });
-    if (!invoiceNumber) return res.status(400).json({ message: "invoiceNumber is required" });
+    if (!supplierId || !invoiceNumber) {
+      return res.status(400).json({ message: "supplierId and invoiceNumber are required" });
+    }
 
     const supplier = await Supplier.findOne({ _id: supplierId, pharmacyId });
     if (!supplier) return res.status(404).json({ message: "Supplier not found" });
 
-    const purchaseDate = purchaseDateRaw ? parseDate(purchaseDateRaw) : new Date();
+    // 🚀 FIXED DATE LOGIC
+    // 1. Get the purchase date (from body or fallback to "now")
+    const purchaseDate = purchaseDateRaw ? new Date(purchaseDateRaw) : new Date();
     
-    // 🚀 STEP 1: Calculate Total Invoice Amount
-    let totalInvoiceAmount = 0;
+    // 2. Clone it for the Due Date calculation to avoid mutating the original
+    const dueDate = new Date(purchaseDate.getTime()); 
+    dueDate.setDate(dueDate.getDate() + 30);
 
+    let totalInvoiceAmount = 0;
     const medicines: CSVMedicineRow[] = [];
+
     await new Promise<void>((resolve, reject) => {
       Readable.from(file.buffer)
         .pipe(csv())
@@ -78,19 +80,11 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
       const stock = toNum(med.stock) || 0;
       const costPrice = toNum(med.costPrice) || 0;
       const sellingPrice = toNum(med.sellingPrice) || 0;
-      const expiryDate = parseDate(med.expiryDate);
 
       if (!med.medicineId || !med.name || !med.batchNo) {
         throw new Error(`Row ${idx + 1}: Missing medicineId, name, or batchNo`);
       }
-      if (costPrice <= 0 || stock <= 0) {
-        throw new Error(`Row ${idx + 1}: Invalid costPrice or stock`);
-      }
-      if (sellingPrice < costPrice) {
-        throw new Error(`Row ${idx + 1}: Selling price < Cost price`);
-      }
 
-      // 🚀 Add to Total Amount (Cost * Quantity)
       totalInvoiceAmount += (costPrice * stock);
 
       return {
@@ -98,28 +92,23 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
         name: med.name,
         batchNo: med.batchNo,
         quantity: stock,
-        unitPrice: costPrice, // Price pharmacy pays supplier
-        expiryDate: expiryDate!,
+        unitPrice: costPrice,
+        expiryDate: new Date(med.expiryDate),
         supplier: med.supplier || supplier.name, 
       };
     });
 
-    // 🚀 STEP 2: Calculate Due Date (Net 30 Days)
-    const dueDate = new Date(purchaseDate ?? new Date());
-    dueDate.setDate(dueDate.getDate() + 30);
-
     session.startTransaction();
 
-    // 🚀 STEP 3: Record Purchase with Financials
     const createdPurchase = await Purchase.create(
       [{
         pharmacyId,
         supplierId: supplier._id,
         invoiceNumber,
-        purchaseDate,
-        dueDate,           // Set to 30 days later
+        purchaseDate,      // The original date (e.g., Feb 12)
+        dueDate,           // Exactly 30 days later (e.g., March 14)
         totalAmount: totalInvoiceAmount,
-        paidAmount: 0,      // Defaulting to unpaid
+        paidAmount: 0,
         paymentStatus: "UNPAID",
         items: purchaseItems,
       }],
@@ -152,15 +141,16 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
     session.endSession();
 
     return res.status(200).json({
-      message: "CSV processed and invoice recorded (Net 30) ✅",
-      records: medicines.length,
+      message: "CSV processed successfully ✅",
       invoiceTotal: totalInvoiceAmount,
+      purchaseDate: purchaseDate.toISOString().split('T')[0],
       dueDate: dueDate.toISOString().split('T')[0],
       purchaseId: createdPurchase[0]._id,
     });
+
   } catch (error: any) {
     if (session) {
-      try { await session.abortTransaction(); } catch {}
+      await session.abortTransaction();
       session.endSession();
     }
     return res.status(500).json({ message: "CSV failed", error: error.message });

@@ -12,7 +12,7 @@ type PurchaseLean = {
   _id: mongoose.Types.ObjectId;
   invoiceNumber: string;
   purchaseDate: Date;
-  supplierId: any; // populated -> { _id, name }
+  supplierId: any;
   items: Array<{
     medicineId: string;
     name: string;
@@ -98,7 +98,7 @@ export const getSupplierPurchases = async (req: Request, res: Response) => {
  * Returns details of ONE purchase invoice (including items),
  * scoped to logged-in pharmacy.
  *
- * ✅ Adds computed totals:
+ * Adds computed totals:
  * - subTotal
  * - discount (0 for now)
  * - tax (0 for now)
@@ -128,7 +128,7 @@ export const getPurchaseById = async (req: Request, res: Response) => {
 
     const items = Array.isArray(purchase.items) ? purchase.items : [];
 
-    // ✅ compute totals
+    //  compute totals
     const subTotal = items.reduce((sum, it) => {
       const qty = Number(it.quantity) || 0;
       const price = Number(it.unitPrice) || 0;
