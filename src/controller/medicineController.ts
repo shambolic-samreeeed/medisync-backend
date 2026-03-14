@@ -198,7 +198,6 @@ export const addMedicineManually = async (req: Request, res: Response) => {
       batchNo, stock: Number(stock), reorderLevel: reorderLevel ? Number(reorderLevel) : 0,
       unit, 
       
-      // ✅ CHANGED: Passing both prices
       costPrice: Number(costPrice), 
       sellingPrice: Number(sellingPrice), 
       
@@ -223,5 +222,42 @@ export const getAllMedicines = async (req: Request, res: Response) => {
     return res.status(200).json(medicines);
   } catch (error: any) {
     return res.status(500).json({ message: "Failed to fetch medicine", error: error.message });
+  }
+};
+
+// UPDATE MEDICINE PRICES
+export const updateMedicinePrices = async (req: Request, res: Response) => {
+  try {
+    const pharmacyId = req.user?.pharmacyId;
+    const { id } = req.params; // The specific medicine _id
+    const { costPrice, sellingPrice } = req.body;
+
+    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized" });
+    
+    if (costPrice === undefined || sellingPrice === undefined) {
+      return res.status(400).json({ message: "Both costPrice and sellingPrice are required" });
+    }
+    
+    if (Number(sellingPrice) < Number(costPrice)) {
+      return res.status(400).json({ message: "Selling price cannot be lower than cost price" });
+    }
+
+    const updatedMedicine = await Medicine.findOneAndUpdate(
+      { _id: id, pharmacyId },
+      { costPrice: Number(costPrice), sellingPrice: Number(sellingPrice) },
+      { new: true } // Returns the updated document
+    );
+
+    if (!updatedMedicine) {
+      return res.status(404).json({ message: "Medicine not found" });
+    }
+
+    return res.status(200).json({ 
+      success: true, 
+      message: "Prices updated successfully", 
+      data: updatedMedicine 
+    });
+  } catch (error: any) {
+    return res.status(500).json({ message: "Failed to update prices", error: error.message });
   }
 };

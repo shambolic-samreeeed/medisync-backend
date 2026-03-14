@@ -14,6 +14,7 @@ import upload from "../middlewares/multerMiddleware";
 import {
   addMedicineManually,
   getAllMedicines,
+  updateMedicinePrices,
   uploadMedicineCSV,
 } from "../controller/medicineController"; 
 import { blockMedicineFromPOS, disposeMedicineBatch, unblockMedicineFromPOS } from "../controller/medicineWorkflowController";
@@ -36,5 +37,6 @@ router.get("/", authMiddleware, getAllMedicines);
 router.post("/:id/block-pos", authMiddleware, blockMedicineFromPOS);
 router.post("/:id/unblock-pos", authMiddleware, unblockMedicineFromPOS); 
 router.post("/:id/dispose", authMiddleware, disposeMedicineBatch);
+router.put("/:id/prices", authMiddleware, updateMedicinePrices);
 
 export default router;
