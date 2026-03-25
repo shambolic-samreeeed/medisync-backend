@@ -72,6 +72,9 @@ app.use("/api/setting", settingRoutes);
 //Khalti route
 app.use("/api/khalti", khaltiRoutes);
 
+// Report routes
+app.use("api/reports", require("./routes/report.routes").default); // Importing report routes
+
 // Test root
 app.get("/", (_req, res) => {
   res.send("MediSync API Running");
