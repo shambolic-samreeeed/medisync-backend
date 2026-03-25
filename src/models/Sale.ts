@@ -4,7 +4,8 @@ export interface CartItem {
   medicineId: string;
   batchNo: string;
   name: string;
-  unitPrice: number;
+  unitPrice: number; // Selling Price
+  costPrice: number; // Buying Price from Supplier
   quantity: number;
   total: number;
 }
@@ -30,6 +31,7 @@ const cartItemSchema = new Schema<CartItem>({
   batchNo: { type: String, required: true },
   name: { type: String, required: true },
   unitPrice: { type: Number, required: true },
+  costPrice: { type: Number, required: true }, 
   quantity: { type: Number, required: true },
   total: { type: Number, required: true },
 });

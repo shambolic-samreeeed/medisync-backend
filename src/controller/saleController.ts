@@ -1,14 +1,7 @@
-/**
- * @file controller/saleController.ts
- * @description
- * Sale controller for MediSync POS (multi-pharmacy safe)
- */
-
 import { Request, Response } from "express";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
 import Customer from "../models/Customer";
-import { SaleInput, CartItem } from "../types/sale";
 import { v4 as uuidv4 } from "uuid";
 
 function normalizePhone(phone: any) {
@@ -23,14 +16,10 @@ export const createSale = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
     }
 
-    const data: SaleInput = req.body;
+    const data = req.body;
 
     if (!data.items || data.items.length === 0) {
       return res.status(400).json({ message: "No items provided for sale." });
-    }
-
-    if (typeof data.paidAmount !== "number" || !Number.isFinite(data.paidAmount)) {
-      return res.status(400).json({ message: "paidAmount must be a valid number." });
     }
 
     const phone = data.customerPhone ? normalizePhone(data.customerPhone) : "";
@@ -46,8 +35,9 @@ export const createSale = async (req: Request, res: Response) => {
     }
 
     let totalAmount = 0;
-    const saleItems: CartItem[] = [];
+    const saleItems = [];
 
+    // Loop through items to calculate totals AND grab costPrice
     for (const item of data.items) {
       const medicine = await Medicine.findOne({
         pharmacyId,
@@ -56,50 +46,36 @@ export const createSale = async (req: Request, res: Response) => {
       });
 
       if (!medicine) {
-        return res.status(404).json({ message: `Medicine ${item.medicineId} batch ${item.batchNo} not found.` });
+        return res.status(404).json({ message: `Medicine ${item.name} batch ${item.batchNo} not found.` });
       }
 
       if (medicine.stock < item.quantity) {
-        return res.status(400).json({ message: `Not enough stock for ${medicine.name} batch ${item.batchNo}.` });
+        return res.status(400).json({ message: `Not enough stock for ${medicine.name}.` });
       }
 
-      // 🚀 THE FIX: Use medicine.sellingPrice instead of unitPrice to calculate the bill!
       const itemTotal = medicine.sellingPrice * item.quantity;
       totalAmount += itemTotal;
 
+      // 🚀 THE CRITICAL ADDITION: costPrice
       saleItems.push({
         medicineId: item.medicineId,
         batchNo: medicine.batchNo,
         name: medicine.name,
-        
-        // We keep the key as "unitPrice" here so we don't break your frontend Receipt/Cart types, 
-        // but we feed it the actual sellingPrice from the database!
         unitPrice: medicine.sellingPrice, 
+        costPrice: medicine.costPrice, // This makes profit calculation possible!
         quantity: item.quantity,
         total: itemTotal,
       });
+
+      // Update Inventory Stock
+      medicine.stock -= item.quantity;
+      await medicine.save();
     }
 
     const change = data.paidAmount - totalAmount;
 
     if (change < 0) {
-      return res.status(400).json({
-        message: "Paid amount is less than total amount.",
-        totalAmount,
-        paidAmount: data.paidAmount,
-        change,
-      });
-    }
-
-    for (const item of data.items) {
-      await Medicine.findOneAndUpdate(
-        {
-          pharmacyId,
-          medicineId: item.medicineId,
-          batchNo: item.batchNo,
-        },
-        { $inc: { stock: -item.quantity } }
-      );
+      return res.status(400).json({ message: "Paid amount is insufficient.", totalAmount });
     }
 
     const saleRecord = await Sale.create({
@@ -117,14 +93,12 @@ export const createSale = async (req: Request, res: Response) => {
     });
 
     return res.status(201).json({
-      message: "Sale recorded successfully",
+      success: true,
+      message: "Sale recorded successfully ✅",
       sale: saleRecord,
     });
   } catch (error: any) {
     console.error("Create Sale Error:", error);
-    return res.status(500).json({
-      message: "Failed to process sale",
-      error: error?.message || error,
-    });
+    return res.status(500).json({ message: "Failed to process sale", error: error.message });
   }
 };
