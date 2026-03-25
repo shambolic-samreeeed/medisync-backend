@@ -3,17 +3,26 @@ import mongoose from "mongoose";
 import Sale from "../models/Sale";
 import Medicine from "../models/Medicine";
 
-export const getKpiSummary = async (req: Request, res: Response) => {
+/**
+ * @route   GET /api/reports/dashboard
+ * @desc    Get complete financial analytics (KPIs, Charts, Top Products)
+ * @access  Private
+ */
+export const getDashboardReport = async (req: Request, res: Response) => {
   try {
     const { range } = req.query;
-    // Assuming your auth middleware attaches user to req
-    const pharmacyId = (req as any).user.pharmacyId; 
+    const pharmacyId = (req as any).user.pharmacyId;
 
-    // 1. Handle Date Range Logic
+    // 1. Precise Date Logic
     let startDate = new Date();
     startDate.setHours(0, 0, 0, 0);
 
+    let dateFormat = "%Y-%m-%d"; // Default: Group by Day
+
     switch (range) {
+      case "today":
+        // Stay at today 00:00
+        break;
       case "yesterday":
         startDate.setDate(startDate.getDate() - 1);
         break;
@@ -28,51 +37,119 @@ export const getKpiSummary = async (req: Request, res: Response) => {
         startDate.setDate(1);
         break;
       default:
-        startDate.setDate(startDate.getDate() - 7); // Default to week
+        startDate.setDate(startDate.getDate() - 7);
     }
 
-    const queryMatch = {
-      pharmacyId: pharmacyId.toString(), // Sale model uses String for pharmacyId
-      createdAt: { $gte: startDate },
-    };
-
-    // 2. Aggregate Sales Data
-    const salesStats = await Sale.aggregate([
-      { $match: queryMatch },
+    // 2. Main Aggregation Pipeline (Faceting for Speed)
+    const reportData = await Sale.aggregate([
+      { 
+        $match: { 
+          pharmacyId: pharmacyId.toString(), 
+          createdAt: { $gte: startDate } 
+        } 
+      },
       {
         $facet: {
-          "basicTotals": [
+          // --- KPI SUMMARY ---
+          "kpis": [
             {
               $group: {
                 _id: null,
                 totalRevenue: { $sum: "$totalAmount" },
-                count: { $sum: 1 },
-              },
-            },
+                totalInvoices: { $sum: 1 },
+                // Profit = (Selling Price - Cost Price) * Quantity
+                grossProfit: {
+                  $sum: {
+                    $reduce: {
+                      input: "$items",
+                      initialValue: 0,
+                      in: {
+                        $add: [
+                          "$$value",
+                          {
+                            $multiply: [
+                              { $subtract: ["$$this.unitPrice", { $ifNull: ["$$this.costPrice", 0] }] },
+                              "$$this.quantity"
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
           ],
-          // ⚠️ Note: This profit calc assumes you add 'costPrice' to your CartItem schema
-          // If you haven't added it yet, this will return 0 or NaN
-          "profitCalc": [
+
+          // --- SALES TREND (Bar Chart) ---
+          "salesTrend": [
+            {
+              $group: {
+                _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+                revenue: { $sum: "$totalAmount" },
+                profit: {
+                  $sum: {
+                    $reduce: {
+                      input: "$items",
+                      initialValue: 0,
+                      in: {
+                        $add: [
+                          "$$value",
+                          {
+                            $multiply: [
+                              { $subtract: ["$$this.unitPrice", { $ifNull: ["$$this.costPrice", 0] }] },
+                              "$$this.quantity"
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            { $sort: { "_id": 1 } },
+            { 
+              $project: { 
+                _id: 0, 
+                name: "$_id", 
+                revenue: 1, 
+                profit: 1 
+              } 
+            }
+          ],
+
+          // --- PAYMENT METHODS (Pie Chart) ---
+          "paymentMethods": [
+            {
+              $group: {
+                _id: { $ifNull: ["$paymentMethod", "Unknown"] },
+                value: { $sum: "$totalAmount" }
+              }
+            },
+            { $project: { _id: 0, name: "$_id", value: 1 } }
+          ],
+
+          // --- TOP PRODUCTS (Table) ---
+          "topProducts": [
             { $unwind: "$items" },
             {
               $group: {
-                _id: null,
-                totalProfit: {
-                  $sum: {
-                    $multiply: [
-                      { $subtract: ["$items.unitPrice", { $ifNull: ["$items.costPrice", 0] }] },
-                      "$items.quantity",
-                    ],
-                  },
-                },
-              },
+                _id: "$items.medicineId",
+                name: { $first: "$items.name" },
+                sold: { $sum: "$items.quantity" },
+                revenue: { $sum: "$items.total" }
+              }
             },
-          ],
-        },
+            { $sort: { sold: -1 } },
+            { $limit: 5 },
+            { $project: { _id: 0, id: "$_id", name: 1, sold: 1, revenue: 1 } }
+          ]
+        }
       }
     ]);
 
-    // 3. Aggregate Loss Data (Expired/Disposed)
+    // 3. Loss Data from Expired/Disposed items
     const lossStats = await Medicine.aggregate([
       {
         $match: {
@@ -89,16 +166,32 @@ export const getKpiSummary = async (req: Request, res: Response) => {
       },
     ]);
 
-    // 4. Format Output
-    const data = {
-      totalRevenue: salesStats[0].basicTotals[0]?.totalRevenue || 0,
-      totalInvoices: salesStats[0].basicTotals[0]?.count || 0,
-      grossProfit: salesStats[0].profitCalc[0]?.totalProfit || 0,
-      totalLoss: lossStats[0]?.totalLoss || 0,
-    };
+    // 4. Final Formatting for Frontend
+    const summary = reportData[0].kpis[0] || { totalRevenue: 0, totalInvoices: 0, grossProfit: 0 };
+    
+    // Add day names to trend if needed (optional formatting)
+    const formattedTrend = reportData[0].salesTrend.map((t: any) => ({
+      ...t,
+      name: new Date(t.name).toLocaleDateString('en-US', { weekday: 'short' })
+    }));
 
-    return res.status(200).json({ success: true, data });
+    return res.status(200).json({
+      success: true,
+      data: {
+        kpis: {
+          totalRevenue: summary.totalRevenue,
+          totalInvoices: summary.totalInvoices,
+          grossProfit: summary.grossProfit,
+          totalLoss: lossStats[0]?.totalLoss || 0,
+        },
+        salesTrend: formattedTrend,
+        paymentMethods: reportData[0].paymentMethods,
+        topProducts: reportData[0].topProducts
+      }
+    });
+
   } catch (error: any) {
+    console.error("Report Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
