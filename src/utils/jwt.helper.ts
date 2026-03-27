@@ -11,11 +11,11 @@ export const generateAccessToken = (user: IUser) => {
       pharmacyId: user.pharmacyId
     },
     process.env.JWT_SECRET as string,
-    { expiresIn: "24h" }
+    { expiresIn: "15m" }
   );
 };
 
-export const generateRefreshToken = (user: IUser) => {
+export const generateRefreshToken = (user: IUser, rememberMe: boolean) => {
   return jwt.sign(
     {
       id: user._id.toString(),
@@ -23,6 +23,6 @@ export const generateRefreshToken = (user: IUser) => {
       pharmacyId:user.pharmacyId
     },
     process.env.JWT_REFRESH_SECRET as string,
-    { expiresIn: "7d" }
+    { expiresIn:rememberMe ?  "30d" : "7d" }
   );
 };

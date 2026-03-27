@@ -20,7 +20,6 @@ export const register = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Invalid role" });
     }
 
-    // Pharmacists must have pharmacyId
     if (normalizedRole === "PHARMACIST" && !pharmacyId) {
       return res.status(400).json({ success: false, message: "Pharmacist must belong to a pharmacy" });
     }
@@ -30,7 +29,7 @@ export const register = async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, message: "Email already registered" });
     }
 
-    // ✅ Let the schema pre-save hook hash the password
+    // Let the schema pre-save hook hash the password
     const user = await User.create({
       firstName,
       lastName,
@@ -41,7 +40,7 @@ export const register = async (req: Request, res: Response) => {
     });
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
+    const refreshToken = generateRefreshToken(user, false);
 
     const { password: _pw, ...userData } = user.toObject();
 
@@ -61,27 +60,36 @@ export const register = async (req: Request, res: Response) => {
  */
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rememberMe = false } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: "Email and password are required" });
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
     }
 
-    // ✅ populate pharmacy name
-    const user = await User.findOne({ email: String(email).toLowerCase() })
-      .populate("pharmacyId", "name");
+    const user = await User.findOne({
+      email: String(email).toLowerCase(),
+    }).populate("pharmacyId", "name");
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(400).json({ success: false, message: "Invalid credentials" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials",
+      });
     }
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
+    const refreshToken = generateRefreshToken(user, rememberMe); // 🔥
 
     const userObj: any = user.toObject();
     delete userObj.password;
@@ -91,7 +99,6 @@ export const login = async (req: Request, res: Response) => {
         ? userObj.pharmacyId.name
         : undefined;
 
-    //  Return a clean user object for frontend
     return res.status(200).json({
       success: true,
       message: "Login successful",
@@ -102,7 +109,7 @@ export const login = async (req: Request, res: Response) => {
           email: userObj.email,
           role: userObj.role,
           pharmacyId: userObj.pharmacyId,
-          pharmacyName, 
+          pharmacyName,
         },
         accessToken,
         refreshToken,
@@ -110,7 +117,10 @@ export const login = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Login error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 };
 
@@ -124,7 +134,7 @@ export const deleteUserByUserId = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "UserId is required" });
     }
 
-    // ✅ requester.userId exists because we will include userId in JWT payload
+    //  requester.userId exists because we will include userId in JWT payload
     if (requester?.userId === userId) {
       return res.status(400).json({ success: false, message: "You cannot delete yourself" });
     }
@@ -205,7 +215,7 @@ export const updatePassword = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // ✅ set plain; pre-save hook hashes
+    //  set plain; pre-save hook hashes
     user.password = newPassword;
     await user.save();
 
