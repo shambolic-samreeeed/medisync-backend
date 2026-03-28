@@ -13,13 +13,13 @@ export const createDoctor = async (req: Request, res: Response) => {
       pharmacyCommission, availability, avgConsultationTime 
     } = req.body;
 
-    // 🚀 DUPLICATE CHECK: Prevent adding a doctor if the license number already exists
+    // 🚀 PHARMACY-SCOPED DUPLICATE CHECK: Only checks within THIS pharmacy
     if (licenseNumber && licenseNumber.trim() !== "") {
-      const existingDoctor = await Doctor.findOne({ licenseNumber });
+      const existingDoctor = await Doctor.findOne({ licenseNumber, pharmacyId });
       if (existingDoctor) {
         return res.status(400).json({ 
           success: false, 
-          message: `A doctor with license number ${licenseNumber} is already registered in the system.` 
+          message: `Dr. ${existingDoctor.name} is already registered in your pharmacy with license number ${licenseNumber}.` 
         });
       }
     }
@@ -29,7 +29,6 @@ export const createDoctor = async (req: Request, res: Response) => {
       photoUrl = await uploadImageToCloudinary(req.file.buffer, "medisync/doctors");
     }
 
-    // Parse JSON arrays sent via form-data
     const parsedQualifications = typeof qualifications === 'string' ? JSON.parse(qualifications) : (qualifications || []);
     const parsedAvailability = typeof availability === 'string' ? JSON.parse(availability) : (availability || []);
 
@@ -44,7 +43,7 @@ export const createDoctor = async (req: Request, res: Response) => {
       email,
       consultationFee: Number(consultationFee), 
       pharmacyCommission: Number(pharmacyCommission),
-      availability: parsedAvailability, // 🚀 Saved as structured array
+      availability: parsedAvailability, 
       avgConsultationTime: Number(avgConsultationTime) || 15, 
       photoUrl,
     });
@@ -78,18 +77,21 @@ export const updateDoctor = async (req: Request, res: Response) => {
 
     const updateData = { ...req.body };
 
-    // 🚀 DUPLICATE CHECK: If they are updating the license number, ensure it doesn't clash with someone ELSE
+    // 🚀 PHARMACY-SCOPED DUPLICATE CHECK: Prevent updating to an existing license in THIS pharmacy
     if (updateData.licenseNumber && updateData.licenseNumber !== doctor.licenseNumber) {
-      const existingDoctor = await Doctor.findOne({ licenseNumber: updateData.licenseNumber, _id: { $ne: doctorId } });
+      const existingDoctor = await Doctor.findOne({ 
+        licenseNumber: updateData.licenseNumber, 
+        pharmacyId, 
+        _id: { $ne: doctorId } 
+      });
       if (existingDoctor) {
         return res.status(400).json({ 
           success: false, 
-          message: `Another doctor is already registered with license number ${updateData.licenseNumber}.` 
+          message: `Another doctor in your pharmacy is already using license number ${updateData.licenseNumber}.` 
         });
       }
     }
 
-    // Parse JSON strings
     if (updateData.qualifications && typeof updateData.qualifications === 'string') {
       updateData.qualifications = JSON.parse(updateData.qualifications);
     }
