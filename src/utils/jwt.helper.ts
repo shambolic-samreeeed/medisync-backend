@@ -11,7 +11,7 @@ export const generateAccessToken = (user: IUser) => {
       pharmacyId: user.pharmacyId
     },
     process.env.JWT_SECRET as string,
-    { expiresIn: "15m" }
+    { expiresIn: "24h" }
   );
 };
 
