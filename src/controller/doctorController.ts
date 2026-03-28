@@ -10,24 +10,46 @@ export const createDoctor = async (req: Request, res: Response) => {
     const { 
       name, specialization, qualifications, experienceYears, 
       licenseNumber, phone, email, consultationFee, 
-      pharmacyCommission, scheduleNotes, avgConsultationTime 
+      pharmacyCommission, availability, avgConsultationTime 
     } = req.body;
+
+    // 🚀 DUPLICATE CHECK: Prevent adding a doctor if the license number already exists
+    if (licenseNumber && licenseNumber.trim() !== "") {
+      const existingDoctor = await Doctor.findOne({ licenseNumber });
+      if (existingDoctor) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `A doctor with license number ${licenseNumber} is already registered in the system.` 
+        });
+      }
+    }
 
     let photoUrl = "";
     if (req.file) {
       photoUrl = await uploadImageToCloudinary(req.file.buffer, "medisync/doctors");
     }
 
-    const parsedQualifications = typeof qualifications === 'string' ? JSON.parse(qualifications) : qualifications;
+    // Parse JSON arrays sent via form-data
+    const parsedQualifications = typeof qualifications === 'string' ? JSON.parse(qualifications) : (qualifications || []);
+    const parsedAvailability = typeof availability === 'string' ? JSON.parse(availability) : (availability || []);
 
     const newDoctor = await Doctor.create({
-      pharmacyId, name, specialization, qualifications: parsedQualifications,
-      experienceYears: Number(experienceYears) || 0, licenseNumber, phone, email,
-      consultationFee: Number(consultationFee), pharmacyCommission: Number(pharmacyCommission),
-      scheduleNotes, avgConsultationTime: Number(avgConsultationTime) || 15, photoUrl,
+      pharmacyId, 
+      name, 
+      specialization, 
+      qualifications: parsedQualifications,
+      experienceYears: Number(experienceYears) || 0, 
+      licenseNumber, 
+      phone, 
+      email,
+      consultationFee: Number(consultationFee), 
+      pharmacyCommission: Number(pharmacyCommission),
+      availability: parsedAvailability, // 🚀 Saved as structured array
+      avgConsultationTime: Number(avgConsultationTime) || 15, 
+      photoUrl,
     });
 
-    return res.status(201).json({ success: true, message: "Doctor added", data: newDoctor });
+    return res.status(201).json({ success: true, message: "Doctor added successfully", data: newDoctor });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -55,8 +77,24 @@ export const updateDoctor = async (req: Request, res: Response) => {
     if (!doctor) return res.status(404).json({ message: "Doctor not found" });
 
     const updateData = { ...req.body };
+
+    // 🚀 DUPLICATE CHECK: If they are updating the license number, ensure it doesn't clash with someone ELSE
+    if (updateData.licenseNumber && updateData.licenseNumber !== doctor.licenseNumber) {
+      const existingDoctor = await Doctor.findOne({ licenseNumber: updateData.licenseNumber, _id: { $ne: doctorId } });
+      if (existingDoctor) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Another doctor is already registered with license number ${updateData.licenseNumber}.` 
+        });
+      }
+    }
+
+    // Parse JSON strings
     if (updateData.qualifications && typeof updateData.qualifications === 'string') {
       updateData.qualifications = JSON.parse(updateData.qualifications);
+    }
+    if (updateData.availability && typeof updateData.availability === 'string') {
+      updateData.availability = JSON.parse(updateData.availability);
     }
 
     if (req.file) {
@@ -65,7 +103,7 @@ export const updateDoctor = async (req: Request, res: Response) => {
     }
 
     const updatedDoctor = await Doctor.findByIdAndUpdate(doctorId, updateData, { new: true });
-    return res.status(200).json({ success: true, message: "Doctor updated", data: updatedDoctor });
+    return res.status(200).json({ success: true, message: "Doctor updated successfully", data: updatedDoctor });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }

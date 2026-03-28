@@ -53,11 +53,9 @@ export const updateAppointmentStatus = async (req: Request, res: Response) => {
     const appointment = await Appointment.findOne({ _id: appointmentId, pharmacyId });
     if (!appointment) return res.status(404).json({ message: "Appointment not found" });
 
-    // Ledger logic: Add to pending balance when completed
     if (status === "COMPLETED" && appointment.status !== "COMPLETED") {
       await Doctor.findByIdAndUpdate(appointment.doctorId, { $inc: { pendingBalance: appointment.doctorPayout } });
     }
-    // Ledger logic: Rollback if undone
     if (appointment.status === "COMPLETED" && status !== "COMPLETED") {
        await Doctor.findByIdAndUpdate(appointment.doctorId, { $inc: { pendingBalance: -appointment.doctorPayout } });
     }

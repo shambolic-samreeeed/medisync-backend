@@ -12,8 +12,15 @@ export interface IDoctor extends Document {
   email?: string;
   consultationFee: number;
   pharmacyCommission: number; 
-  pendingBalance: number; // 💰 The ledger for what you owe them
-  scheduleNotes?: string; 
+  pendingBalance: number; 
+  
+  // 🚀 UPGRADED: Structured Availability instead of a string
+  availability: {
+    dayOfWeek: string;
+    startTime: string;
+    endTime: string;
+  }[];
+  
   avgConsultationTime: number; 
   isActive: boolean;
 }
@@ -26,13 +33,28 @@ const doctorSchema = new Schema<IDoctor>(
     photoUrl: { type: String, default: "" },
     qualifications: { type: [String], default: [] },
     experienceYears: { type: Number, default: 0 },
+    
+    // License Number
     licenseNumber: { type: String, trim: true },
     phone: { type: String, trim: true },
     email: { type: String, lowercase: true, trim: true },
     consultationFee: { type: Number, required: true },
     pharmacyCommission: { type: Number, required: true, default: 0 },
     pendingBalance: { type: Number, default: 0 }, 
-    scheduleNotes: { type: String },
+    
+    // 🚀 UPGRADED: Array of schedule objects
+    availability: [
+      {
+        dayOfWeek: { 
+          type: String, 
+          enum: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+          required: true 
+        },
+        startTime: { type: String, required: true }, // e.g., "16:00"
+        endTime: { type: String, required: true }    // e.g., "19:00"
+      }
+    ],
+    
     avgConsultationTime: { type: Number, default: 15 },
     isActive: { type: Boolean, default: true },
   },
