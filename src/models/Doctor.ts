@@ -15,8 +15,8 @@ export interface IDoctor extends Document {
   pendingBalance: number; 
   availability: {
     dayOfWeek: string;
-    startTime: string;
-    endTime: string;
+    startTime: string; // "HH:mm"
+    endTime: string;   // "HH:mm"
   }[];
   avgConsultationTime: number; 
   isActive: boolean;
