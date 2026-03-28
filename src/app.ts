@@ -16,6 +16,7 @@ import settingRoutes from "./routes/setting.routes";
 import khaltiRoutes from './routes/khalti.routes';
 import posRoutes from './routes/pos.routes';
 import reportRoutes from "./routes/report.routes";
+import clinicRoutes from "./routes/clinic.routes";
 
 const app = express();
 
@@ -75,6 +76,9 @@ app.use("/api/khalti", khaltiRoutes);
 
 // Report routes
 app.use("/api/reports", reportRoutes);
+
+//Cliclic Routes
+app.use("/api/clinic", clinicRoutes)
 
 // Test root
 app.get("/", (_req, res) => {
