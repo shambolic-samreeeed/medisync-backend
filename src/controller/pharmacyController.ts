@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Pharmacy from "../models/Pharmacy";
 import mongoose from "mongoose";
+import { email } from "zod";
 
 /**
  * Helper: Add 1 month to current date
@@ -22,7 +23,7 @@ export const createPharmacy = async (req: Request, res: Response) => {
     if (requester.role !== "ADMIN")
       return res.status(403).json({ success: false, message: "Only admins can create pharmacies" });
 
-    const { name, address, phone } = req.body;
+    const { name, address, phone, email } = req.body;
 
     if (!name) return res.status(400).json({ success: false, message: "Pharmacy name is required" });
 
@@ -36,6 +37,7 @@ export const createPharmacy = async (req: Request, res: Response) => {
       name,
       address,
       phone,
+      email,
       plan: "STARTER",        // ✅ matches schema
       planStartDate: now,
       planEndDate: getNextMonthDate(),
@@ -99,7 +101,7 @@ export const updatePharmacy = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: "Only admins can update pharmacies" });
 
     const { id } = req.params;
-    const { name, address, phone } = req.body;
+    const { name, address, phone, email } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id))
       return res.status(400).json({ success: false, message: "Invalid pharmacy ID" });
@@ -108,6 +110,7 @@ export const updatePharmacy = async (req: Request, res: Response) => {
     if (name) updateData.name = name;
     if (address) updateData.address = address;
     if (phone) updateData.phone = phone;
+    if(email) updateData.email = email;
 
     const updatedPharmacy = await Pharmacy.findByIdAndUpdate(id, { $set: updateData }, { new: true });
     if (!updatedPharmacy) return res.status(404).json({ success: false, message: "Pharmacy not found" });

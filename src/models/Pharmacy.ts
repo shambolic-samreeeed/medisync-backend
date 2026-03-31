@@ -4,6 +4,7 @@ export interface PharmacyDocument extends Document {
   name: string;
   address?: string;
   phone?: string;
+  email?: string;
   plan:"STARTER"|"PROFESSIONAL"|"ENTERPRISE";
   planStartDate?: Date;
   planEndDate?: Date;
@@ -21,6 +22,7 @@ const pharmacySchema = new Schema<PharmacyDocument>(
     name: { type: String, required: true, unique: true },
     address: { type: String },
     phone: { type: String },
+    email: { type: String },
 
     plan:{
       type: String,
