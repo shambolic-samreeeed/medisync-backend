@@ -5,23 +5,22 @@ import {
   getPharmacyById,
   updatePharmacy,
   deletePharmacy,
-  updatePharmacyPlan,
   updatePharmacyStatus,
+  updatePharmacyPlan,
 } from "../controller/pharmacyController";
-
-import { authMiddleware } from "../middlewares/authMiddleware";
-import { adminOnly } from "../middlewares/adminsOnly";
+import { authenticate } from "../middlewares/authenticate";
 
 const router = Router();
 
-router.get("/", authMiddleware, getAllPharmacies);
-router.get("/:id", authMiddleware, getPharmacyById);
+router.post("/", authenticate, createPharmacy);
+router.get("/", authenticate, getAllPharmacies);
+router.get("/:id", authenticate, getPharmacyById);
+router.put("/:id", authenticate, updatePharmacy);
+router.delete("/:id", authenticate, deletePharmacy);
 
-router.post("/", adminOnly, createPharmacy);
-router.put("/:id", adminOnly, updatePharmacy);
-router.delete("/:id",adminOnly, deletePharmacy);
+router.put("/:id/plan", authenticate, updatePharmacyPlan);
 
-router.put("/:id/plan", adminOnly, updatePharmacyPlan);
-router.put("/:id/status", adminOnly, updatePharmacyStatus);
+router.put("/:id/status", authenticate, updatePharmacyStatus);
+
 
 export default router;
