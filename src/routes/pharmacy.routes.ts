@@ -7,6 +7,7 @@ import {
   deletePharmacy,
   updatePharmacyStatus,
   updatePharmacyPlan,
+  updatePharmacyPaymentStatus,
 } from "../controller/pharmacyController";
 import { authenticate } from "../middlewares/authenticate";
 
@@ -21,6 +22,8 @@ router.delete("/:id", authenticate, deletePharmacy);
 router.put("/:id/plan", authenticate, updatePharmacyPlan);
 
 router.put("/:id/status", authenticate, updatePharmacyStatus);
+
+router.put("/:id/payment-status", authenticate, updatePharmacyPaymentStatus);
 
 
 export default router;

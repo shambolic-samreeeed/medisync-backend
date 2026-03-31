@@ -184,6 +184,55 @@ export const updatePharmacyStatus = async (req: Request, res: Response) => {
 };
 
 /**
+ * PUT /api/pharmacies/:id/payment-status
+ * Update payment status of a pharmacy (ADMIN only)
+ */
+export const updatePharmacyPaymentStatus = async (req: Request, res: Response) => {
+  try {
+    const requester = (req as any).user;
+
+    if (!requester || requester.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can update payment status",
+      });
+    }
+
+    const { id } = req.params;
+    const paymentStatus = req.body?.paymentStatus;
+
+    if (!paymentStatus || !["PAID", "UNPAID", "OVERDUE"].includes(paymentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment status",
+      });
+    }
+
+    const updated = await Pharmacy.findByIdAndUpdate(
+      id,
+      { paymentStatus },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment status updated successfully",
+      data: updated,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: (err as Error).message,
+    });
+  }
+};
+
+/**
  * DELETE /api/pharmacies/:id
  * Delete a pharmacy (ADMIN only)
  */
