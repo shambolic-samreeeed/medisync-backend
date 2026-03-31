@@ -3,6 +3,14 @@ import Pharmacy from "../models/Pharmacy";
 import mongoose from "mongoose";
 
 /**
+ * Helper: Add 1 month to current date
+ */
+const getNextMonthDate = () => {
+  const now = new Date();
+  return new Date(now.setMonth(now.getMonth() + 1));
+};
+
+/**
  * POST /api/pharmacies
  * Create a new pharmacy (ADMIN only)
  */
@@ -38,7 +46,20 @@ export const createPharmacy = async (req: Request, res: Response) => {
       });
     }
 
-    const pharmacy = await Pharmacy.create({ name, address, phone });
+    const now = new Date();
+
+    const pharmacy = await Pharmacy.create({
+      name,
+      address,
+      phone,
+
+      // ✅ SaaS fields
+      plan: "BASIC",
+      planStartDate: now,
+      planEndDate: getNextMonthDate(),
+      paymentStatus: "PENDING",
+      status: "ACTIVE",
+    });
 
     return res.status(201).json({
       success: true,
@@ -57,7 +78,6 @@ export const createPharmacy = async (req: Request, res: Response) => {
 
 /**
  * GET /api/pharmacies
- * Get all pharmacies (Any authenticated user)
  */
 export const getAllPharmacies = async (req: Request, res: Response) => {
   try {
@@ -83,7 +103,6 @@ export const getAllPharmacies = async (req: Request, res: Response) => {
 
 /**
  * GET /api/pharmacies/:id
- * Get pharmacy by ID (Any authenticated user)
  */
 export const getPharmacyById = async (req: Request, res: Response) => {
   try {
@@ -124,7 +143,7 @@ export const getPharmacyById = async (req: Request, res: Response) => {
 
 /**
  * PUT /api/pharmacies/:id
- * Update pharmacy (ADMIN only)
+ * Update basic info (ADMIN only)
  */
 export const updatePharmacy = async (req: Request, res: Response) => {
   try {
@@ -184,8 +203,118 @@ export const updatePharmacy = async (req: Request, res: Response) => {
 };
 
 /**
+ * 🔥 NEW: Update Subscription Plan (SUPER IMPORTANT)
+ * PUT /api/pharmacies/:id/plan
+ */
+export const updatePharmacyPlan = async (req: Request, res: Response) => {
+  try {
+    const requester = (req as any).user;
+
+    if (!requester || requester.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can update plans",
+      });
+    }
+
+    const { id } = req.params;
+    const { plan } = req.body;
+
+    if (!["BASIC", "PRO", "ENTERPRISE"].includes(plan)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid plan type",
+      });
+    }
+
+    const now = new Date();
+
+    const updated = await Pharmacy.findByIdAndUpdate(
+      id,
+      {
+        plan,
+        planStartDate: now,
+        planEndDate: getNextMonthDate(),
+        paymentStatus: "PAID",
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Pharmacy not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Plan updated successfully",
+      data: updated,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: (err as Error).message,
+    });
+  }
+};
+
+/**
+ * 🔥 NEW: Suspend / Activate Pharmacy
+ * PUT /api/pharmacies/:id/status
+ */
+export const updatePharmacyStatus = async (req: Request, res: Response) => {
+  try {
+    const requester = (req as any).user;
+
+    if (!requester || requester.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can change status",
+      });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["ACTIVE", "SUSPENDED"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status",
+      });
+    }
+
+    const updated = await Pharmacy.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Pharmacy not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Status updated successfully",
+      data: updated,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: (err as Error).message,
+    });
+  }
+};
+
+/**
  * DELETE /api/pharmacies/:id
- * Delete pharmacy (ADMIN only)
  */
 export const deletePharmacy = async (req: Request, res: Response) => {
   try {
