@@ -7,7 +7,7 @@ export const adminOnly = (req: Request, res: Response, next: NextFunction) => {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
 
-  if (user.role !== "ADMIN") {
+if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN" && !user.pharmacyId) {
     return res.status(403).json({
       success: false,
       message: "Access denied. Admins only.",
