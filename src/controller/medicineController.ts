@@ -55,7 +55,6 @@ export const uploadMedicineCSV = async (req: Request, res: Response) => {
     const supplier = await Supplier.findOne({ _id: supplierId, pharmacyId });
     if (!supplier) return res.status(404).json({ message: "Supplier not found" });
 
-    // 🚀 FIXED DATE LOGIC
     // 1. Get the purchase date (from body or fallback to "now")
     const purchaseDate = purchaseDateRaw ? new Date(purchaseDateRaw) : new Date();
     

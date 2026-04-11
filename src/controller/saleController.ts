@@ -93,7 +93,7 @@ export const createSale = async (req: Request, res: Response) => {
     }
 
     // 4. Financial Calculations
-    const paidAmount = data.paidAmount ?? totalAmount; // Default to exact amount if not sent
+    const paidAmount = data.paidAmount ?? totalAmount;
     const change = paidAmount - totalAmount;
 
     if (change < 0) {
@@ -112,11 +112,10 @@ export const createSale = async (req: Request, res: Response) => {
       paidAmount,
       change,
       customerName: resolvedCustomerName,
-      customerPhone: phone || "Walk-in", // Clearly labels guest checkouts
+      customerPhone: phone || "Walk-in",
       customerEmail: resolvedCustomerEmail,
       paymentMethod: data.paymentMethod || "CASH",
       invoiceNumber: `INV-${Date.now()}`,
-      // Note: linkedSaleId can be added here if coming from an appointment
       linkedSaleId: data.linkedSaleId || undefined, 
     });
 

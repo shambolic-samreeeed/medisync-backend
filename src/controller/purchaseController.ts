@@ -34,7 +34,7 @@ type PurchaseLean = {
 };
 
 /**
- * 🚀 GET /api/purchases
+ * 
  * Returns ALL purchase invoices for the dashboard.
  */
 export const getAllPurchases = async (req: Request, res: Response) => {
@@ -118,7 +118,6 @@ export const getPurchaseById = async (req: Request, res: Response) => {
 };
 
 /**
- * 🚀 PATCH /api/purchases/:purchaseId/payment
  * Logs a payment, saves the history, and updates status (UNPAID -> PARTIAL -> PAID)
  */
 export const updatePurchasePayment = async (req: Request, res: Response) => {
@@ -156,7 +155,7 @@ export const updatePurchasePayment = async (req: Request, res: Response) => {
       purchase.paymentStatus = "PARTIAL";
     }
 
-    // 4. 🚀 Record the payment history
+    // 4.  Record the payment history
     purchase.paymentHistory.push({
       amount: numericAmount,
       date: new Date(),
