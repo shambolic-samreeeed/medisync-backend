@@ -183,6 +183,80 @@ export const updatePharmacyStatus = async (req: Request, res: Response) => {
   }
 };
 
+export const updatePharmacySubscriptionManually = async (req: Request, res: Response) => {
+  try {
+    const requester = (req as any).user;
+
+    if (!requester || requester.role !== "ADMIN") {
+      return res.status(403).json({ message: "Only admin can update subscription" });
+    }
+
+    const { id } = req.params;
+
+    const {
+      status,          // ACTIVE | SUSPENDED | CANCELLED
+      paymentStatus,   // PAID | UNPAID | OVERDUE
+      extendMonths,    // number (optional)
+      setEndDate       // optional manual override
+    } = req.body;
+
+    const pharmacy = await Pharmacy.findById(id);
+
+    if (!pharmacy) {
+      return res.status(404).json({ message: "Pharmacy not found" });
+    }
+
+    const updateData: any = {};
+
+    // 1️⃣ Update status if provided
+    if (status) {
+      updateData.status = status;
+    }
+
+    // 2️⃣ Update payment status if provided
+    if (paymentStatus) {
+      updateData.paymentStatus = paymentStatus;
+    }
+
+    // 3️⃣ Extend subscription (MOST IMPORTANT)
+    if (extendMonths && typeof extendMonths === "number") {
+      const baseDate = new Date(pharmacy.planEndDate || new Date());
+
+      baseDate.setMonth(baseDate.getMonth() + extendMonths);
+
+      updateData.planEndDate = baseDate;
+
+      // If extending → automatically activate
+      updateData.status = "ACTIVE";
+      updateData.paymentStatus = "PAID";
+    }
+
+    // 4️⃣ Manual override end date (optional)
+    if (setEndDate) {
+      updateData.planEndDate = new Date(setEndDate);
+    }
+
+    const updated = await Pharmacy.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Subscription updated successfully",
+      data: updated,
+    });
+
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: (err as Error).message,
+    });
+  }
+};
+
 /**
  * PUT /api/pharmacies/:id/payment-status
  * Update payment status of a pharmacy (ADMIN only)

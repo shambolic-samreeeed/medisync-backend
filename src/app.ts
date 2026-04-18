@@ -2,6 +2,7 @@ import express from "express";
 import morgan from "morgan";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { startSubscriptionJob } from "./jobs/subscription.job";
 
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/users.routes";
@@ -23,6 +24,7 @@ const app = express();
 app.use(express.json());
 app.use(morgan("dev"));
 app.use(cookieParser());
+startSubscriptionJob();
 
 // Serve static files (Crucial for QR code images!)
 app.use("/uploads", express.static("uploads")); 

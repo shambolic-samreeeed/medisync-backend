@@ -8,6 +8,7 @@ import {
   updatePharmacyStatus,
   updatePharmacyPlan,
   updatePharmacyPaymentStatus,
+  updatePharmacySubscriptionManually,
 } from "../controller/pharmacyController";
 import { authenticate } from "../middlewares/authenticate";
 
@@ -24,6 +25,8 @@ router.put("/:id/plan", authenticate, updatePharmacyPlan);
 router.put("/:id/status", authenticate, updatePharmacyStatus);
 
 router.put("/:id/payment-status", authenticate, updatePharmacyPaymentStatus);
+
+router.put("/:id/subscription", authenticate, updatePharmacySubscriptionManually);
 
 
 export default router;
