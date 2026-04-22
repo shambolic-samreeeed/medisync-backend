@@ -31,128 +31,143 @@ const toNum = (v: any) => {
 // UPLOAD CSV + ACCOUNTS PAYABLE LOGIC
 // ==========================================
 export const uploadMedicineCSV = async (req: Request, res: Response) => {
-  let session: mongoose.ClientSession | null = null;
-  
+  const session = await mongoose.startSession();
+
   try {
-    session = await mongoose.startSession();
-    
+    session.startTransaction();
+
     const pharmacyId = req.user?.pharmacyId;
     const uploadedBy = req.user?._id;
 
-    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized." });
+    if (!pharmacyId) throw new Error("Unauthorized");
 
     const file = req.file;
-    if (!file) return res.status(400).json({ message: "CSV file is required" });
+    if (!file) throw new Error("CSV file is required");
 
-    const supplierId = (req.body?.supplierId || "").toString().trim();
-    const invoiceNumber = (req.body?.invoiceNumber || "").toString().trim();
-    const purchaseDateRaw = req.body?.purchaseDate;
+    const { supplierId, invoiceNumber, purchaseDate } = req.body;
 
     if (!supplierId || !invoiceNumber) {
-      return res.status(400).json({ message: "supplierId and invoiceNumber are required" });
+      throw new Error("supplierId and invoiceNumber required");
     }
 
-    const supplier = await Supplier.findOne({ _id: supplierId, pharmacyId });
-    if (!supplier) return res.status(404).json({ message: "Supplier not found" });
+    const supplier = await Supplier.findOne({
+      _id: supplierId,
+      pharmacyId,
+    }).session(session);
 
-    // 1. Get the purchase date (from body or fallback to "now")
-    const purchaseDate = purchaseDateRaw ? new Date(purchaseDateRaw) : new Date();
-    
-    // 2. Clone it for the Due Date calculation to avoid mutating the original
-    const dueDate = new Date(purchaseDate.getTime()); 
+    if (!supplier) throw new Error("Supplier not found");
+
+    const purchaseDateObj = purchaseDate ? new Date(purchaseDate) : new Date();
+    const dueDate = new Date(purchaseDateObj);
     dueDate.setDate(dueDate.getDate() + 30);
 
-    let totalInvoiceAmount = 0;
     const medicines: CSVMedicineRow[] = [];
 
     await new Promise<void>((resolve, reject) => {
       Readable.from(file.buffer)
         .pipe(csv())
-        .on("data", (row: CSVMedicineRow) => medicines.push(row))
-        .on("end", () => resolve())
-        .on("error", (err) => reject(err));
+        .on("data", (row) => medicines.push(row))
+        .on("end", resolve)
+        .on("error", reject);
     });
 
-    if (medicines.length === 0) return res.status(400).json({ message: "CSV is empty" });
+    if (!medicines.length) throw new Error("CSV is empty");
 
-    const purchaseItems = medicines.map((med, idx) => {
-      const stock = toNum(med.stock) || 0;
-      const costPrice = toNum(med.costPrice) || 0;
-      const sellingPrice = toNum(med.sellingPrice) || 0;
+    let total = 0;
+
+    const purchaseItems = [];
+
+    for (const med of medicines) {
+      const stock = Number(med.stock || 0);
+      const costPrice = Number(med.costPrice || 0);
 
       if (!med.medicineId || !med.name || !med.batchNo) {
-        throw new Error(`Row ${idx + 1}: Missing medicineId, name, or batchNo`);
+        throw new Error("Missing required fields in CSV");
       }
 
-      totalInvoiceAmount += (costPrice * stock);
+      total += stock * costPrice;
 
-      return {
+      purchaseItems.push({
         medicineId: med.medicineId,
         name: med.name,
         batchNo: med.batchNo,
         quantity: stock,
         unitPrice: costPrice,
         expiryDate: new Date(med.expiryDate),
-        supplier: med.supplier || supplier.name, 
-      };
-    });
+        supplier: supplier.name,
+      });
 
-    session.startTransaction();
+      // 🧠 UPSERT MEDICINE + ADD BATCH
+      await Medicine.findOneAndUpdate(
+        {
+          pharmacyId,
+          medicineId: med.medicineId,
+          batchNo: med.batchNo,
+        },
+        {
+          $inc: { stock },
+          $set: {
+            name: med.name,
+            brand: med.brand,
+            category: med.category,
+            costPrice,
+            sellingPrice: Number(med.sellingPrice || 0),
+            expiryDate: new Date(med.expiryDate),
+            supplier: supplier.name,
+          },
+          $push: {
+            batches: {
+              batchNo: med.batchNo,
+              stock,
+              costPrice,
+              sellingPrice: Number(med.sellingPrice || 0),
+              expiryDate: new Date(med.expiryDate),
+              createdAt: new Date(),
+            },
+          },
+        },
+        { upsert: true, session }
+      );
+    }
 
-    const createdPurchase = await Purchase.create(
-      [{
-        pharmacyId,
-        supplierId: supplier._id,
-        invoiceNumber,
-        purchaseDate,      // The original date (e.g., Feb 12)
-        dueDate,           // Exactly 30 days later (e.g., March 14)
-        totalAmount: totalInvoiceAmount,
-        paidAmount: 0,
-        paymentStatus: "UNPAID",
-        items: purchaseItems,
-      }],
+    const purchase = await Purchase.create(
+      [
+        {
+          pharmacyId,
+          supplierId,
+          invoiceNumber,
+          purchaseDate: purchaseDateObj,
+          dueDate,
+          totalAmount: total,
+          paidAmount: 0,
+          paymentStatus: "UNPAID",
+          items: purchaseItems,
+        },
+      ],
       { session }
     );
-
-    for (const med of medicines) {
-      await upsertMedicine({
-        pharmacyId,
-        uploadedBy,
-        medicineId: med.medicineId!,
-        barcode: med.barcode,
-        name: med.name,
-        brand: med.brand,
-        category: med.category,
-        description: med.description,
-        batchNo: med.batchNo,
-        stock: Number(med.stock),
-        reorderLevel: med.reorderLevel ? Number(med.reorderLevel) : 0,
-        unit: med.unit,
-        costPrice: Number(med.costPrice),
-        sellingPrice: Number(med.sellingPrice),
-        supplier: med.supplier || supplier.name,
-        expiryDate: new Date(med.expiryDate),
-        manufactureDate: med.manufactureDate ? new Date(med.manufactureDate) : undefined,
-      });
-    }
 
     await session.commitTransaction();
     session.endSession();
 
     return res.status(200).json({
-      message: "CSV processed successfully ✅",
-      invoiceTotal: totalInvoiceAmount,
-      purchaseDate: purchaseDate.toISOString().split('T')[0],
-      dueDate: dueDate.toISOString().split('T')[0],
-      purchaseId: createdPurchase[0]._id,
+      message: "CSV uploaded successfully ✅",
+      purchaseId: purchase[0]._id,
+      total,
     });
 
-  } catch (error: any) {
-    if (session) {
+  } catch (err: any) {
+    console.error(err);
+
+    if (session.inTransaction()) {
       await session.abortTransaction();
-      session.endSession();
     }
-    return res.status(500).json({ message: "CSV failed", error: error.message });
+
+    session.endSession();
+
+    return res.status(500).json({
+      message: err.message || "Upload failed",
+    });
   }
 };
 

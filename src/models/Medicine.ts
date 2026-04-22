@@ -1,11 +1,4 @@
-/**
- * @file models/Medicine.ts
- * @description Medicine model for MediSync.
- */
-
 import mongoose, { Schema, Document } from "mongoose";
-
-export type POSStatus = "ACTIVE" | "BLOCKED";
 
 export interface IMedicine extends Document {
   pharmacyId: mongoose.Types.ObjectId;
@@ -13,6 +6,7 @@ export interface IMedicine extends Document {
 
   medicineId: string;
   barcode?: string;
+
   name: string;
   brand?: string;
   category?: string;
@@ -23,63 +17,79 @@ export interface IMedicine extends Document {
   stock: number;
   reorderLevel: number;
   unit?: string;
-  
-  // ✅ CHANGED: Split unitPrice into cost and selling price
+
   costPrice: number;
   sellingPrice: number;
-  
+
   supplier?: string;
 
   expiryDate: Date;
   manufactureDate?: Date;
-  addedAt: Date;
 
-  posStatus: POSStatus;
+  // ✅ BATCH TRACKING (NEW)
+  batches: Array<{
+    batchNo: string;
+    stock: number;
+    costPrice: number;
+    sellingPrice: number;
+    expiryDate: Date;
+    purchaseId?: mongoose.Types.ObjectId;
+    createdAt: Date;
+  }>;
+
+  posStatus: "ACTIVE" | "BLOCKED";
   isDisposed: boolean;
-  disposedAt?: Date;
-  disposedBy?: mongoose.Types.ObjectId;
-  disposeNote?: string;
 }
+
+const batchSchema = new Schema(
+  {
+    batchNo: String,
+    stock: Number,
+    costPrice: Number,
+    sellingPrice: Number,
+    expiryDate: Date,
+    purchaseId: { type: Schema.Types.ObjectId, ref: "Purchase" },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
 
 const medicineSchema = new Schema<IMedicine>(
   {
     pharmacyId: { type: Schema.Types.ObjectId, ref: "Pharmacy", required: true },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User" },
 
-    medicineId: { type: String, required: true, trim: true },
+    medicineId: { type: String, required: true },
+    barcode: String,
 
-    barcode: { type: String },
-    name: { type: String, required: true, trim: true },
-    brand: { type: String },
-    category: { type: String },
-    description: { type: String },
+    name: { type: String, required: true },
+    brand: String,
+    category: String,
+    description: String,
 
-    batchNo: { type: String, required: true, trim: true },
+    batchNo: { type: String, required: true },
 
-    stock: { type: Number, required: true, default: 0 },
+    stock: { type: Number, default: 0 },
     reorderLevel: { type: Number, default: 0 },
-    unit: { type: String },
+    unit: String,
 
-    // Added required cost and selling prices
     costPrice: { type: Number, required: true },
     sellingPrice: { type: Number, required: true },
-    
-    supplier: { type: String },
 
-    expiryDate: { type: Date, required: true },
-    manufactureDate: { type: Date },
-    addedAt: { type: Date, default: Date.now },
+    supplier: String,
 
-    posStatus: { type: String, enum: ["ACTIVE", "BLOCKED"], default: "ACTIVE" },
+    expiryDate: Date,
+    manufactureDate: Date,
+
+    batches: [batchSchema],
+
+    posStatus: { type: String, default: "ACTIVE" },
     isDisposed: { type: Boolean, default: false },
-    disposedAt: { type: Date },
-    disposedBy: { type: Schema.Types.ObjectId, ref: "User" },
-    disposeNote: { type: String },
   },
   { timestamps: true }
 );
 
+// ✅ important index for CSV + batch safety
 medicineSchema.index({ pharmacyId: 1, medicineId: 1, batchNo: 1 }, { unique: true });
 
-const Medicine = mongoose.model<IMedicine>("Medicine", medicineSchema);
-export default Medicine;
+export default mongoose.model<IMedicine>("Medicine", medicineSchema);
