@@ -61,7 +61,7 @@ export const upsertMedicine = async (input: MedicineInput) => {
     existing.supplier = supplier ?? existing.supplier;
     existing.expiryDate = expiryDate;
     existing.manufactureDate = manufactureDate ?? existing.manufactureDate;
-    existing.addedAt = addedAt ?? existing.addedAt;
+    // existing.addedAt = addedAt ?? existing.addedAt;
 
     await existing.save();
     return existing;
