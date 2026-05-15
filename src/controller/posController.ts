@@ -1,61 +1,107 @@
-// src/controllers/posController.ts
 import { Request, Response } from "express";
-import Medicine from "../models/Medicine";
+import mongoose from "mongoose";
+import ProductMedicine from "../models/ProductMedicine";
 
-const DASH_TZ = "Asia/Kathmandu";
-
-// "YYYY-MM-DD" in Nepal timezone
-function dateKeyInTZ(d: Date, timeZone = DASH_TZ) {
-  return d.toLocaleDateString("en-CA", { timeZone });
-}
-
-// Start of Nepal day as a stable UTC Date boundary for Mongo comparisons
-function startOfDayInTZ(date = new Date(), timeZone = DASH_TZ) {
-  const key = dateKeyInTZ(date, timeZone);
-  return new Date(`${key}T00:00:00.000Z`);
+/**
+ * Safely converts any pharmacyId representation to an ObjectId.
+ */
+function toObjectId(id: any): mongoose.Types.ObjectId {
+  if (id instanceof mongoose.Types.ObjectId) return id;
+  if (typeof id === "string" && mongoose.isValidObjectId(id)) {
+    return new mongoose.Types.ObjectId(id);
+  }
+  // Handle objects that have an _id (populated docs) or toString
+  const asString = id?._id?.toString?.() ?? id?.toString?.();
+  if (asString && mongoose.isValidObjectId(asString)) {
+    return new mongoose.Types.ObjectId(asString);
+  }
+  throw new Error(`Invalid pharmacyId: ${JSON.stringify(id)}`);
 }
 
 /**
  * GET /api/pos/medicines
- *  Returns only sellable batches for POS
- *
- * Filters:
- * - pharmacyId from req.user
- * - stock > 0
- * - posStatus is ACTIVE OR missing (backward compatible)
- * - isDisposed !== true (missing treated as false)
- * - not expired: expiryDate >= todayStartNepal (valid for full day in Nepal)
- *
- * Sorted:
- * - expiryDate asc (FEFO)
+ * Returns active products that have at least one ACTIVE batch with stock.
  */
 export const getSellableMedicinesForPOS = async (req: Request, res: Response) => {
   try {
-    const pharmacyId = (req.user as any)?.pharmacyId;
-    if (!pharmacyId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    const rawPharmacyId = req.user?.pharmacyId;
+    if (!rawPharmacyId) return res.status(401).json({ message: "Unauthorized" });
 
-    const todayStartNepal = startOfDayInTZ(new Date(), DASH_TZ);
+    const pharmacyObjId = toObjectId(rawPharmacyId);
 
-    const medicines = await Medicine.find({
-      pharmacyId,
-      stock: { $gt: 0 },
+    const data = await ProductMedicine.aggregate([
+      { $match: { pharmacyId: pharmacyObjId, isActive: true, posStatus: "ACTIVE" } },
+      {
+        $lookup: {
+          from: "genericmedicines",
+          localField: "genericId",
+          foreignField: "_id",
+          as: "generic",
+        },
+      },
+      { $unwind: { path: "$generic", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "batches",
+          let: { pid: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$productId", "$$pid"] },
+                status: "ACTIVE",
+                currentQuantity: { $gt: 0 },
+                expiryDate: { $gt: new Date() },
+              },
+            },
+            { $sort: { expiryDate: 1, createdAt: 1 } },
+          ],
+          as: "activeBatches",
+        },
+      },
+      {
+        $addFields: {
+          totalStock: { $sum: "$activeBatches.currentQuantity" },
+          nextBatch: { $arrayElemAt: ["$activeBatches", 0] },
+        },
+      },
+      { $match: { totalStock: { $gt: 0 } } },
+      {
+        $project: {
+          _id: 1,
+          productCode: 1,
+          brandName: 1,
+          manufacturer: 1,
+          barcode: 1,
+          unit: 1,
+          packSize: 1,
+          defaultSellingPrice: 1,
+          reorderLevel: 1,
+          photoUrl: 1,
+          totalStock: 1,
+          generic: {
+            _id: "$generic._id",
+            genericName: "$generic.genericName",
+            strength: "$generic.strength",
+            dosageForm: "$generic.dosageForm",
+            therapeuticClass: "$generic.therapeuticClass",
+          },
+          nextBatch: {
+            _id: "$nextBatch._id",
+            batchNumber: "$nextBatch.batchNumber",
+            sellingPrice: "$nextBatch.sellingPrice",
+            expiryDate: "$nextBatch.expiryDate",
+            currentQuantity: "$nextBatch.currentQuantity",
+          },
+        },
+      },
+      { $sort: { brandName: 1 } },
+    ]);
 
-      $or: [{ posStatus: "ACTIVE" }, { posStatus: { $exists: false } }],
-
-      isDisposed: { $ne: true },
-      expiryDate: { $gte: todayStartNepal },
-    })
-      .sort({ expiryDate: 1, name: 1 }) 
-      .select("medicineId name brand category batchNo stock reorderLevel unit sellingPrice expiryDate barcode");
-
-    return res.status(200).json(medicines);
-  } catch (error: any) {
-    console.error("getSellableMedicinesForPOS error:", error);
-    return res.status(500).json({
-      message: "Failed to load POS medicines",
-      error: error?.message || String(error),
-    });
+    return res.status(200).json(data);
+  } catch (err: any) {
+    console.error("getSellableMedicinesForPOS:", err);
+    return res
+      .status(500)
+      .json({ message: "Failed to load POS medicines", error: err.message });
   }
 };
