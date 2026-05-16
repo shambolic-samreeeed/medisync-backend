@@ -376,10 +376,32 @@ export const getAllMedicines = async (req: Request, res: Response) => {
     const pharmacyId = req.user?.pharmacyId;
     if (!pharmacyId) return res.status(401).json({ message: "Unauthorized" });
 
-    const products = await ProductMedicine.find({ pharmacyId, isActive: true })
-      .populate("genericId", "genericName strength dosageForm therapeuticClass category")
-      .sort({ brandName: 1 })
-      .lean<Array<{ _id: mongoose.Types.ObjectId; [key: string]: any }>>();
+    // ── Pagination + Search ──────────────────────────────────────────────────
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const skip = (page - 1) * limit;
+    const searchTerm = (req.query.search as string)?.trim().toLowerCase();
+
+    // Convert string pharmacyId to ObjectId — ProductMedicine stores it as ObjectId
+    const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
+
+    const baseFilter: any = { pharmacyId: pharmacyObjId, isActive: true };
+
+    // Search against searchTokens index (set in pre-save hook)
+    if (searchTerm) {
+      baseFilter.searchTokens = { $regex: searchTerm, $options: "i" };
+    }
+
+    const [total, products] = await Promise.all([
+      ProductMedicine.countDocuments(baseFilter),
+      ProductMedicine.find(baseFilter)
+        .populate("genericId", "genericName strength dosageForm therapeuticClass category")
+        .sort({ brandName: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean<Array<{ _id: mongoose.Types.ObjectId; [key: string]: any }>>(),
+    ]);
+    // ─────────────────────────────────────────────────────────────────────────
 
     const stockMap = await getStockForProducts(
       products.map((p) => p._id),
@@ -423,7 +445,18 @@ export const getAllMedicines = async (req: Request, res: Response) => {
       };
     });
 
-    return res.status(200).json(enriched);
+    // Return with pagination metadata
+    return res.status(200).json({
+      data: enriched,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      },
+    });
   } catch (err: any) {
     console.error("getAllMedicines error:", err);
     return res.status(500).json({ message: "Failed", error: err.message });

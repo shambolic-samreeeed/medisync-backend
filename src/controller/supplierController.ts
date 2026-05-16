@@ -37,8 +37,36 @@ export const getSuppliers = async (req: Request, res: Response) => {
     const pharmacyId = req.user?.pharmacyId;
     if (!pharmacyId) return res.status(401).json({ message: "Unauthorized: pharmacyId missing" });
 
-    const suppliers = await Supplier.find({ pharmacyId }).sort({ name: 1 });
-    return res.status(200).json(suppliers);
+    const searchTerm = (req.query.search as string)?.trim();
+    const filter: any = { pharmacyId };
+    if (searchTerm) {
+      filter.$or = [
+        { name: { $regex: searchTerm, $options: "i" } },
+        { email: { $regex: searchTerm, $options: "i" } },
+        { phone: { $regex: searchTerm, $options: "i" } },
+      ];
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const skip = (page - 1) * limit;
+
+    const [total, suppliers] = await Promise.all([
+      Supplier.countDocuments(filter),
+      Supplier.find(filter).sort({ name: 1 }).skip(skip).limit(limit),
+    ]);
+
+    return res.status(200).json({
+      data: suppliers,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      },
+    });
   } catch (error: any) {
     return res.status(500).json({ message: "Failed to fetch suppliers", error: error?.message || error });
   }

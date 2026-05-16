@@ -1,22 +1,7 @@
-/**
- * @file middleware/authMiddleware.ts
- * @description
- * JWT authentication middleware for MediSync.
- *
- * What it does:
- * 1) Reads token from: Authorization: Bearer <token>
- * 2) Verifies JWT
- * 3) Loads the user from DB
- * 4) Attaches req.user = { _id, role, pharmacyId }
- *
- * Why:
- * - Controllers should NEVER accept pharmacyId from frontend.
- * - Backend decides pharmacy from authenticated user.
- */
-
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { User } from "../models/User";
+import Pharmacy from "../models/Pharmacy";
 
 interface JwtPayload {
   id?: string;
@@ -61,11 +46,32 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       return res.status(401).json({ success: false, message: "User not found" });
     }
 
-    if (!user.pharmacyId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized: pharmacyId missing on user. Assign this user to a pharmacy in DB.",
-      });
+    // ADMINs have no pharmacyId — let them through without subscription check
+    if (user.role !== "ADMIN") {
+      if (!user.pharmacyId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized: pharmacyId missing on user. Assign this user to a pharmacy in DB.",
+        });
+      }
+
+      // ── Subscription / Suspension Gate ──────────────────────────────────────
+      const pharmacy = await Pharmacy.findById(user.pharmacyId).select("status paymentStatus name");
+      if (!pharmacy) {
+        return res.status(401).json({
+          success: false,
+          message: "Pharmacy not found. Please contact your administrator.",
+        });
+      }
+
+      if (pharmacy.status === "SUSPENDED" || pharmacy.status === "CANCELLED") {
+        return res.status(403).json({
+          success: false,
+          suspended: true,
+          message: `Your pharmacy account (${pharmacy.name}) is ${pharmacy.status.toLowerCase()}. Please renew your subscription to continue using MediSync.`,
+        });
+      }
+      // ────────────────────────────────────────────────────────────────────────
     }
 
     // Handles both:
@@ -74,12 +80,12 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     const pharmacyId =
       typeof (user.pharmacyId as any) === "object"
         ? (user.pharmacyId as any)._id?.toString?.()
-        : user.pharmacyId.toString();
+        : user.pharmacyId?.toString();
 
     req.user = {
       _id: user._id.toString(),
       role: user.role,
-      pharmacyId,
+      pharmacyId: pharmacyId ?? "",
     };
 
     next();

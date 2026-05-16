@@ -69,7 +69,7 @@ export async function getCustomers(req: Request, res: Response) {
 
     const filter: any = { pharmacyId };
 
-    // POS: exact phone lookup (fast)
+    // POS: exact phone lookup (fast) — no pagination needed
     if (phone) {
       filter.phone = String(phone).trim();
       const customer = await Customer.findOne(filter);
@@ -86,9 +86,27 @@ export async function getCustomers(req: Request, res: Response) {
       filter.email = { $regex: String(email).trim(), $options: "i" };
     }
 
-    const customers = await Customer.find(filter).sort({ createdAt: -1 });
+    // ── Pagination ───────────────────────────────────────────────────────────
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const skip = (page - 1) * limit;
 
-    return res.json(customers);
+    const [total, customers] = await Promise.all([
+      Customer.countDocuments(filter),
+      Customer.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    ]);
+
+    return res.json({
+      data: customers,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      },
+    });
   } catch {
     return res.status(500).json({ message: "Error fetching customers" });
   }

@@ -301,6 +301,12 @@ import Sale from "../models/Sale";
 import Batch from "../models/Batch";
 import ProductMedicine from "../models/ProductMedicine";
 import Customer from "../models/Customer";
+import Pharmacy from "../models/Pharmacy";
+import {
+  sendSaleReceiptEmail,
+  sendLowStockAlert,
+  sendOutOfStockAlert,
+} from "../utils/emailService";
 
 interface SaleItemInput {
   productId: string;
@@ -309,6 +315,67 @@ interface SaleItemInput {
 
 function normalizePhone(phone: any) {
   return String(phone ?? "").trim();
+}
+
+/**
+ * After a sale, check all sold products for low/out-of-stock and notify the pharmacy.
+ * This runs asynchronously after the response is sent.
+ */
+async function checkAndNotifyStockLevels(
+  pharmacyId: string,
+  productIds: mongoose.Types.ObjectId[],
+  pharmacyEmail: string,
+  pharmacyName: string
+) {
+  try {
+    const products = await ProductMedicine.find({
+      _id: { $in: productIds },
+      pharmacyId,
+      isActive: true,
+    }).lean();
+
+    const outOfStock: Array<{ brandName: string }> = [];
+    const lowStock: Array<{ brandName: string; currentStock: number; reorderLevel: number }> = [];
+
+    for (const product of products) {
+      // Aggregate current total stock across all active batches
+      const stockAgg = await Batch.aggregate([
+        {
+          $match: {
+            pharmacyId: new mongoose.Types.ObjectId(pharmacyId),
+            productId: product._id,
+            status: "ACTIVE",
+          },
+        },
+        { $group: { _id: null, totalStock: { $sum: "$currentQuantity" } } },
+      ]);
+
+      const totalStock = stockAgg[0]?.totalStock ?? 0;
+      const reorderLevel = product.reorderLevel ?? 0;
+
+      if (totalStock <= 0) {
+        outOfStock.push({ brandName: product.brandName });
+      } else if (reorderLevel > 0 && totalStock <= reorderLevel) {
+        lowStock.push({
+          brandName: product.brandName,
+          currentStock: totalStock,
+          reorderLevel,
+        });
+      }
+    }
+
+    // Send out-of-stock alert
+    if (outOfStock.length > 0) {
+      await sendOutOfStockAlert({ pharmacyEmail, pharmacyName, items: outOfStock });
+    }
+
+    // Send low-stock alert
+    if (lowStock.length > 0) {
+      await sendLowStockAlert({ pharmacyEmail, pharmacyName, items: lowStock });
+    }
+  } catch (err) {
+    console.error("Stock notification error:", err);
+  }
 }
 
 export const createSale = async (req: Request, res: Response) => {
@@ -345,8 +412,14 @@ export const createSale = async (req: Request, res: Response) => {
       resolvedCustomerName = data.customerName.trim();
     }
 
+    // Use explicitly provided email if not found via phone lookup
+    if (!resolvedCustomerEmail && data.customerEmail?.trim()) {
+      resolvedCustomerEmail = data.customerEmail.trim();
+    }
+
     let totalAmount = 0;
     const saleItems: any[] = [];
+    const soldProductIds: mongoose.Types.ObjectId[] = [];
 
     for (const item of items) {
       let remaining = Number(item.quantity);
@@ -359,6 +432,8 @@ export const createSale = async (req: Request, res: Response) => {
         posStatus: "ACTIVE",
       }).session(session);
       if (!product) throw new Error(`Product ${item.productId} not available for sale`);
+
+      soldProductIds.push(product._id as mongoose.Types.ObjectId);
 
       // FEFO: oldest expiry first
       const candidates = await Batch.find({
@@ -418,6 +493,8 @@ export const createSale = async (req: Request, res: Response) => {
     const change = paidAmount - totalAmount;
     if (change < 0) throw new Error("Paid amount is less than total amount due");
 
+    const invoiceNumber = `INV-${Date.now()}`;
+
     const [saleRecord] = await Sale.create(
       [
         {
@@ -431,7 +508,7 @@ export const createSale = async (req: Request, res: Response) => {
           customerPhone: phone || "Walk-in",
           customerEmail: resolvedCustomerEmail,
           paymentMethod: data.paymentMethod || "CASH",
-          invoiceNumber: `INV-${Date.now()}`,
+          invoiceNumber,
         },
       ],
       { session }
@@ -439,6 +516,74 @@ export const createSale = async (req: Request, res: Response) => {
 
     await session.commitTransaction();
     session.endSession();
+
+    // ── Post-sale async side effects (non-blocking) ──────────────────────────
+    // Run after response is sent so the sale API is not delayed by email.
+    // pharmacyId from req.user is a string — convert for Mongoose findById.
+    const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
+
+    setImmediate(async () => {
+      try {
+        const pharmacy = await Pharmacy.findById(pharmacyObjId)
+          .select("name email address phone")
+          .lean();
+
+        if (!pharmacy) {
+          console.error("[Email] Pharmacy not found for id:", pharmacyId);
+          return;
+        }
+
+        console.log("[Email] Pharmacy found:", pharmacy.name, "| pharmacy email:", pharmacy.email);
+        console.log("[Email] Customer email:", resolvedCustomerEmail ?? "none (walk-in)");
+
+        // 1. Send customer receipt email
+        if (resolvedCustomerEmail) {
+          try {
+            await sendSaleReceiptEmail({
+              customerEmail: resolvedCustomerEmail,
+              customerName: resolvedCustomerName,
+              pharmacyName: pharmacy.name,
+              pharmacyAddress: (pharmacy as any).address,
+              pharmacyPhone: (pharmacy as any).phone,
+              invoiceNumber,
+              items: saleItems.map((si) => ({
+                productName: si.productName,
+                batchNumber: si.batchNumber,
+                quantity: si.quantity,
+                unitPrice: si.unitPrice,
+                total: si.total,
+              })),
+              totalAmount,
+              paidAmount,
+              change,
+              paymentMethod: data.paymentMethod || "CASH",
+              saleDate: new Date(),
+            });
+            console.log("[Email] Receipt sent to:", resolvedCustomerEmail);
+          } catch (emailErr) {
+            console.error("[Email] Failed to send receipt:", emailErr);
+          }
+        }
+
+        // 2. Check stock levels and notify pharmacy
+        if (pharmacy.email) {
+          try {
+            await checkAndNotifyStockLevels(
+              pharmacyId,
+              soldProductIds,
+              pharmacy.email,
+              pharmacy.name
+            );
+          } catch (stockErr) {
+            console.error("[Email] Failed to send stock alert:", stockErr);
+          }
+        } else {
+          console.warn("[Email] No pharmacy email set — skipping stock alerts. Add an email to the pharmacy record.");
+        }
+      } catch (err) {
+        console.error("[Email] Post-sale email block failed:", err);
+      }
+    });
 
     return res.status(201).json({
       success: true,

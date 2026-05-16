@@ -1,8 +1,29 @@
+import dotenv from "dotenv";
+dotenv.config(); // Must be first — loads .env before any other import reads process.env
+
 import express from "express";
 import morgan from "morgan";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { startSubscriptionJob } from "./jobs/subscription.job";
+import { startDailySummaryJob } from "./jobs/dailySummary.job";
+
+// ── Eagerly register all Mongoose models at startup ─────────────────────────
+// Mongoose resolves populate("genericId") by looking up "GenericMedicine" in
+// its model registry. If the model file has not been imported yet when the
+// first request arrives, it throws "Schema hasn't been registered for model".
+// Importing every model here guarantees they are all registered before any
+// request handler runs, regardless of which route is hit first.
+import "./models/GenericMedicine";
+import "./models/ProductMedicine";
+import "./models/Batch";
+import "./models/Sale";
+import "./models/Purchase";
+import "./models/Supplier";
+import "./models/Customer";
+import "./models/Pharmacy";
+import "./models/User";
+// ─────────────────────────────────────────────────────────────────────────────
 
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/users.routes";
@@ -26,6 +47,11 @@ app.use(express.json());
 app.use(morgan("dev"));
 app.use(cookieParser());
 startSubscriptionJob();
+startDailySummaryJob();
+
+// Verify SMTP connection at startup — logs success or exact error to terminal
+import { verifyEmailConnection } from "./utils/emailService";
+verifyEmailConnection();
 
 // Serve static files (Crucial for QR code images!)
 app.use("/uploads", express.static("uploads")); 

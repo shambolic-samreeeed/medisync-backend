@@ -184,6 +184,10 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Batch from "../models/Batch";
+import ProductMedicine from "../models/ProductMedicine";
+import Pharmacy from "../models/Pharmacy";
+import { User } from "../models/User";
+import { sendBatchDisposalAlert } from "../utils/emailService";
 
 /**
  * POST /api/medicines/:id/block-pos
@@ -271,6 +275,34 @@ export const disposeMedicineBatch = async (req: Request, res: Response) => {
     await batch.save({ session });
     await session.commitTransaction();
     session.endSession();
+
+    // ── Async: send disposal email to pharmacy ───────────────────────────────
+    Promise.all([
+      Pharmacy.findById(pharmacyId).select("name email").lean(),
+      ProductMedicine.findById(batch.productId).select("brandName").lean(),
+      User.findById(userId).select("firstName lastName").lean(),
+    ])
+      .then(([pharmacy, product, disposedByUser]) => {
+        if (!pharmacy?.email) return;
+        const disposedByName = disposedByUser
+          ? `${(disposedByUser as any).firstName} ${(disposedByUser as any).lastName}`
+          : "Staff";
+        sendBatchDisposalAlert({
+          pharmacyEmail: pharmacy.email,
+          pharmacyName: pharmacy.name,
+          batches: [
+            {
+              productName: (product as any)?.brandName ?? "Unknown Product",
+              batchNumber: batch.batchNumber,
+              disposedQuantity: removeQty,
+              reason,
+              disposedBy: disposedByName,
+              note,
+            },
+          ],
+        }).catch(console.error);
+      })
+      .catch(console.error);
 
     return res.json({
       message: "Batch disposed",
