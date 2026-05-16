@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import Pharmacy from "../models/Pharmacy";
 import mongoose from "mongoose";
-import { email } from "zod";
+import { createTrialSubscription } from "../services/subscriptionService";
 
 /**
  * Helper: Add 1 month to current date
@@ -38,12 +38,13 @@ export const createPharmacy = async (req: Request, res: Response) => {
       address,
       phone,
       email,
-      plan: "STARTER",        // ✅ matches schema
-      planStartDate: now,
-      planEndDate: getNextMonthDate(),
-      paymentStatus: "UNPAID", // ✅ matches schema
+      plan: "STARTER",
       status: "ACTIVE",
+      subscriptionStatus: "TRIAL",
     });
+
+    // Auto-provision trial subscription
+    await createTrialSubscription(pharmacy._id.toString(), "STARTER");
 
     return res.status(201).json({ success: true, message: "Pharmacy created successfully", data: pharmacy });
   } catch (err) {

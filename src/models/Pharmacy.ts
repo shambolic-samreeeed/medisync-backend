@@ -1,18 +1,30 @@
+/**
+ * @file src/models/Pharmacy.ts
+ * @description Core pharmacy document.
+ * Subscription details are stored in the Subscription collection (normalized).
+ * A denormalised snapshot (plan, status) is kept here for fast middleware checks.
+ */
 import mongoose, { Document, Schema } from "mongoose";
+import { PlanTier } from "./SubscriptionPlan";
 
 export interface PharmacyDocument extends Document {
   name: string;
   address?: string;
   phone?: string;
   email?: string;
-  plan:"STARTER"|"PROFESSIONAL"|"ENTERPRISE";
-  planStartDate?: Date;
+  licenseNumber?: string;
+  logoUrl?: string;
+
+  // Denormalised subscription snapshot (kept in sync by SubscriptionService)
+  plan: PlanTier;
+  subscriptionStatus: "TRIAL" | "ACTIVE" | "EXPIRED" | "SUSPENDED" | "CANCELLED";
   planEndDate?: Date;
 
-  paymentStatus:"PAID"|"UNPAID"|"OVERDUE";
+  // Legacy fields kept for backward compat — mapped from subscriptionStatus
+  status: "ACTIVE" | "SUSPENDED" | "CANCELLED";
 
-  status:"ACTIVE"|"SUSPENDED"|"CANCELLED";
-  
+  ownerId?: mongoose.Types.ObjectId; // pharmacist who owns this pharmacy
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,24 +35,32 @@ const pharmacySchema = new Schema<PharmacyDocument>(
     address: { type: String },
     phone: { type: String },
     email: { type: String },
+    licenseNumber: { type: String },
+    logoUrl: { type: String },
 
-    plan:{
+    plan: {
       type: String,
       enum: ["STARTER", "PROFESSIONAL", "ENTERPRISE"],
       default: "STARTER",
     },
-    planStartDate: { type: Date },
-    planEndDate: { type: Date },
-    paymentStatus: {
+    subscriptionStatus: {
       type: String,
-      enum: ["PAID", "UNPAID", "OVERDUE"],
-      default: "UNPAID",
+      enum: ["TRIAL", "ACTIVE", "EXPIRED", "SUSPENDED", "CANCELLED"],
+      default: "TRIAL",
     },
-    status:{
+    planEndDate: { type: Date },
+
+    // Legacy field — keep for backward compat with existing middleware
+    status: {
       type: String,
       enum: ["ACTIVE", "SUSPENDED", "CANCELLED"],
       default: "ACTIVE",
-    }
+    },
+
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
   },
   { timestamps: true }
 );

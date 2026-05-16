@@ -1,39 +1,22 @@
 /**
  * @file src/jobs/subscription.job.ts
- * @description
- * Subscription status check — runs once per day at midnight.
- * FIXED: was "* * * * *" (every minute). Now "0 0 * * *" (daily at midnight).
- * Uses a single bulk updateMany instead of looping + calling save() on each pharmacy.
+ * @description Daily cron job to expire subscriptions past their end date.
+ * Delegates business logic to subscriptionService — no model access here.
  */
 import cron from "node-cron";
-import Pharmacy from "../models/Pharmacy";
+import { runExpiryCheck } from "../services/subscriptionService";
 
 export const startSubscriptionJob = () => {
-  // ✅ FIXED: Daily at midnight — was "* * * * *" (ran every minute, hammering DB)
+  // Runs daily at midnight
   cron.schedule("0 0 * * *", async () => {
-    console.log("🔄 [SubscriptionJob] Running daily subscription check...");
-
+    console.log("🔄 [SubscriptionJob] Running daily subscription expiry check...");
     try {
-      const result = await Pharmacy.updateMany(
-        {
-          planEndDate: { $lt: new Date() },
-          paymentStatus: { $ne: "OVERDUE" },
-        },
-        {
-          $set: {
-            paymentStatus: "OVERDUE",
-            status: "SUSPENDED",
-          },
-        }
-      );
-
-      console.log(
-        `✅ [SubscriptionJob] Suspended ${result.modifiedCount} expired pharmacies.`
-      );
+      const count = await runExpiryCheck();
+      console.log(`✅ [SubscriptionJob] Expired ${count} subscription(s).`);
     } catch (err) {
-      console.error("❌ [SubscriptionJob] Subscription job error:", err);
+      console.error(" [SubscriptionJob] Error:", err);
     }
   });
 
-  console.log("✅ Subscription cron job registered (daily at midnight).");
+  console.log(" Subscription cron job registered (daily at midnight).");
 };

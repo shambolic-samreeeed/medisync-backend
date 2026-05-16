@@ -26,7 +26,8 @@ const customerSchema = new Schema<ICustomer>(
   { timestamps: true }
 );
 
-// Optional: prevent duplicate phone per pharmacy
+// Compound unique index: prevents duplicate phone within the same pharmacy.
+// The same phone number is ALLOWED across different pharmacies (correct SaaS behaviour).
 customerSchema.index({ pharmacyId: 1, phone: 1 }, { unique: true });
 
 export default mongoose.model<ICustomer>("Customer", customerSchema);

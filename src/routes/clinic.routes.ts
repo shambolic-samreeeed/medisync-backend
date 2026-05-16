@@ -16,16 +16,16 @@ import {
   updateAppointmentStatus, 
   settleDoctorPayment 
 } from "../controller/appointmentController";
+import { requireFeature } from "../middlewares/featureGuard";
 
 const router = Router();
 
-// Apply your auth middleware to protect all routes in this file
-router.use(authMiddleware);
+// Apply auth middleware + clinic feature gate to all routes
+router.use(authMiddleware, requireFeature("clinicModule"));
 
 // ==========================================
 // DOCTOR ROUTES
 // ==========================================
-// Note: 'photo' matches the form-data key from the frontend
 router.post("/doctors", upload.single("photo"), createDoctor);
 router.get("/doctors", getAllDoctors);
 router.put("/doctors/:id", upload.single("photo"), updateDoctor);

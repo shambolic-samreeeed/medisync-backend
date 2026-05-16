@@ -23,6 +23,9 @@ import "./models/Supplier";
 import "./models/Customer";
 import "./models/Pharmacy";
 import "./models/User";
+import "./models/SubscriptionPlan";
+import "./models/Subscription";
+import "./models/PaymentRecord";
 // ─────────────────────────────────────────────────────────────────────────────
 
 import authRoutes from "./routes/auth.routes";
@@ -40,6 +43,8 @@ import posRoutes from './routes/pos.routes';
 import reportRoutes from "./routes/report.routes";
 import clinicRoutes from "./routes/clinic.routes";
 import inventoryRoutes from "./routes/inventory.routes";
+import superAdminRoutes from "./routes/superAdmin.routes";
+import subscriptionRoutes from "./routes/subscription.routes";
 
 const app = express();
 
@@ -110,6 +115,16 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/clinic", clinicRoutes)
 
 app.use("/api/inventory", inventoryRoutes);
+
+// Super-admin management routes
+app.use("/api/admin", superAdminRoutes);
+
+// Subscription routes (pharmacy self-service)
+app.use("/api/subscription", subscriptionRoutes);
+
+// Seed default subscription plans at startup
+import { seedDefaultPlans } from "./services/subscriptionService";
+seedDefaultPlans().catch(console.error);
 
 // Test root
 app.get("/", (_req, res) => {

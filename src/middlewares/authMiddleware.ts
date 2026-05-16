@@ -56,7 +56,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       }
 
       // ── Subscription / Suspension Gate ──────────────────────────────────────
-      const pharmacy = await Pharmacy.findById(user.pharmacyId).select("status paymentStatus name");
+      const pharmacy = await Pharmacy.findById(user.pharmacyId).select("status subscriptionStatus name");
       if (!pharmacy) {
         return res.status(401).json({
           success: false,
@@ -64,11 +64,14 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         });
       }
 
-      if (pharmacy.status === "SUSPENDED" || pharmacy.status === "CANCELLED") {
+      // Block suspended or cancelled pharmacies
+      const blockedStatuses = ["SUSPENDED", "CANCELLED"];
+      const effectiveStatus = pharmacy.subscriptionStatus ?? pharmacy.status;
+      if (blockedStatuses.includes(effectiveStatus)) {
         return res.status(403).json({
           success: false,
           suspended: true,
-          message: `Your pharmacy account (${pharmacy.name}) is ${pharmacy.status.toLowerCase()}. Please renew your subscription to continue using MediSync.`,
+          message: `Your pharmacy account (${pharmacy.name}) is ${effectiveStatus.toLowerCase()}. Please renew your subscription to continue using MediSync.`,
         });
       }
       // ────────────────────────────────────────────────────────────────────────
