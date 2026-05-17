@@ -597,3 +597,127 @@ export const createSale = async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, message: err.message || "Sale failed" });
   }
 };
+/**
+ * GET /api/sales/recent?limit=10&page=1
+ * Returns recent sales for the pharmacy, paginated, newest first.
+ */
+export const getRecentSales = async (req: Request, res: Response) => {
+  try {
+    const pharmacyId = req.user?.pharmacyId;
+    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized" });
+
+    const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
+    const limit = Math.min(Number(req.query.limit ?? 10), 50);
+    const page  = Math.max(Number(req.query.page  ?? 1), 1);
+    const skip  = (page - 1) * limit;
+
+    const [total, sales] = await Promise.all([
+      Sale.countDocuments({ pharmacyId: pharmacyObjId }),
+      Sale.find({ pharmacyId: pharmacyObjId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select("invoiceNumber customerName totalAmount paymentMethod createdAt items")
+        .lean(),
+    ]);
+
+    const data = sales.map((s: any) => ({
+      _id:           s._id,
+      invoiceNumber: s.invoiceNumber,
+      customerName:  s.customerName || "Walk-in Customer",
+      totalAmount:   s.totalAmount,
+      paymentMethod: s.paymentMethod || "Cash",
+      itemCount:     s.items?.length ?? 0,
+      createdAt:     s.createdAt,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data,
+      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ message: "Failed to fetch recent sales", error: err.message });
+  }
+};
+
+/**
+ * GET /api/sales/stats
+ * KPI stats for the transactions page — total sales, revenue, avg order value,
+ * top payment method, and a breakdown by payment method.
+ */
+export const getSalesStats = async (req: Request, res: Response) => {
+  try {
+    const pharmacyId = req.user?.pharmacyId;
+    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized" });
+
+    const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
+
+    // date range filter — defaults to all-time if not provided
+    const { from, to } = req.query;
+    const matchBase: any = { pharmacyId: pharmacyObjId };
+    if (from || to) {
+      matchBase.createdAt = {};
+      if (from) matchBase.createdAt.$gte = new Date(String(from));
+      if (to)   matchBase.createdAt.$lte = new Date(String(to));
+    }
+
+    // today window for "today" KPI
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const [overallAgg, todayAgg, paymentBreakdown] = await Promise.all([
+      Sale.aggregate([
+        { $match: matchBase },
+        {
+          $group: {
+            _id: null,
+            totalRevenue:    { $sum: "$totalAmount" },
+            totalSales:      { $sum: 1 },
+            avgOrderValue:   { $avg: "$totalAmount" },
+            maxSale:         { $max: "$totalAmount" },
+          },
+        },
+      ]),
+      Sale.aggregate([
+        { $match: { pharmacyId: pharmacyObjId, createdAt: { $gte: todayStart, $lte: todayEnd } } },
+        {
+          $group: {
+            _id: null,
+            todayRevenue: { $sum: "$totalAmount" },
+            todaySales:   { $sum: 1 },
+          },
+        },
+      ]),
+      Sale.aggregate([
+        { $match: matchBase },
+        { $group: { _id: "$paymentMethod", count: { $sum: 1 }, total: { $sum: "$totalAmount" } } },
+        { $sort: { count: -1 } },
+      ]),
+    ]);
+
+    const overall = overallAgg[0] ?? { totalRevenue: 0, totalSales: 0, avgOrderValue: 0, maxSale: 0 };
+    const today   = todayAgg[0]   ?? { todayRevenue: 0, todaySales: 0 };
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalRevenue:   overall.totalRevenue,
+        totalSales:     overall.totalSales,
+        avgOrderValue:  Math.round(overall.avgOrderValue ?? 0),
+        maxSale:        overall.maxSale,
+        todayRevenue:   today.todayRevenue,
+        todaySales:     today.todaySales,
+        paymentBreakdown: paymentBreakdown.map((p: any) => ({
+          method: p._id || "Cash",
+          count:  p.count,
+          total:  p.total,
+        })),
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ message: "Failed to fetch sales stats", error: err.message });
+  }
+};

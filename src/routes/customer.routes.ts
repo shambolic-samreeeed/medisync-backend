@@ -1,10 +1,18 @@
 import { Router } from "express";
-import { createCustomer, deleteCustomer, getCustomerById, getCustomers, updateCustomer } from "../controller/customerController";
+import {
+  createCustomer,
+  deleteCustomer,
+  getCustomerById,
+  getCustomers,
+  updateCustomer,
+} from "../controller/customerController";
 import { authMiddleware } from "../middlewares/authMiddleware";
+import { pharmacyGuard } from "../middlewares/pharmacyGuard";
 
 const router = Router();
 
-router.use(authMiddleware);
+// SECURITY: pharmacyGuard ensures customers are always scoped to the correct pharmacy
+router.use(authMiddleware, pharmacyGuard);
 
 router.post("/", createCustomer);
 router.get("/", getCustomers);

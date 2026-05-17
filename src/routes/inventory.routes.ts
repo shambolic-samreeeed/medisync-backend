@@ -1,9 +1,12 @@
 import { Router } from "express";
 import { authMiddleware } from "../middlewares/authMiddleware";
+import { pharmacyGuard } from "../middlewares/pharmacyGuard";
 import Batch from "../models/Batch";
 
 const router = Router();
-router.use(authMiddleware);
+
+// SECURITY: pharmacyGuard ensures inventory queries are always tenant-isolated
+router.use(authMiddleware, pharmacyGuard);
 
 router.get("/products/:productId/batches", async (req, res) => {
   try {

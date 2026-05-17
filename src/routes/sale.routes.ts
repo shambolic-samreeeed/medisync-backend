@@ -1,10 +1,14 @@
 import { Router } from "express";
-import { createSale } from "../controller/saleController";
+import { createSale, getRecentSales, getSalesStats } from "../controller/saleController";
 import { authMiddleware } from "../middlewares/authMiddleware";
+import { pharmacyGuard } from "../middlewares/pharmacyGuard";
 
 const router = Router();
 
-// Record a sale
-router.post("/", authMiddleware, createSale);
+router.use(authMiddleware, pharmacyGuard);
+
+router.post("/",       createSale);
+router.get("/recent",  getRecentSales);
+router.get("/stats",   getSalesStats);
 
 export default router;

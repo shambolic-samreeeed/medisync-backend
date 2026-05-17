@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { getSellableMedicinesForPOS } from "../controller/posController";
-import { authenticate } from "../middlewares/authenticate";
+import { authMiddleware } from "../middlewares/authMiddleware";
 
 const router = Router();
 
-router.get("/medicines", authenticate, getSellableMedicinesForPOS);
+// SECURITY FIX: was using `authenticate` (JWT-decode only, stale pharmacyId risk).
+// authMiddleware always loads pharmacyId fresh from the DB on every request.
+router.get("/medicines", authMiddleware, getSellableMedicinesForPOS);
 
 export default router;

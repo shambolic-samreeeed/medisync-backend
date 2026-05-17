@@ -9,36 +9,45 @@ export const getDashboardReport = async (req: Request, res: Response) => {
     const { range } = req.query;
     const pharmacyId = (req as any).user.pharmacyId;
 
-    // req.user.pharmacyId is a string. Sale and Batch store pharmacyId as ObjectId.
-    // Aggregation pipelines do strict type matching so we must convert.
     const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
 
     let startDate = new Date();
     startDate.setHours(0, 0, 0, 0);
+    let endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
 
     switch (range) {
+      case "today":
+        // startDate = today 00:00, endDate = today 23:59 (already set)
+        break;
       case "yesterday":
         startDate.setDate(startDate.getDate() - 1);
+        endDate = new Date(startDate);
+        endDate.setHours(23, 59, 59, 999);
         break;
       case "this_week":
-        startDate.setDate(startDate.getDate() - 7);
+        startDate.setDate(startDate.getDate() - 6);
         break;
       case "this_month":
         startDate.setDate(1);
         break;
       case "last_month":
-        startDate.setMonth(startDate.getMonth() - 1);
+        endDate = new Date();
+        endDate.setDate(0);
+        endDate.setHours(23, 59, 59, 999);
+        startDate = new Date(endDate);
         startDate.setDate(1);
+        startDate.setHours(0, 0, 0, 0);
         break;
       default:
-        startDate.setDate(startDate.getDate() - 7);
+        startDate.setDate(startDate.getDate() - 6);
     }
 
     const reportData = await Sale.aggregate([
       {
         $match: {
           pharmacyId: pharmacyObjId,
-          createdAt: { $gte: startDate },
+          createdAt: { $gte: startDate, $lte: endDate },
         },
       },
       {
@@ -119,13 +128,12 @@ export const getDashboardReport = async (req: Request, res: Response) => {
       },
     ]);
 
-    // Loss from disposed batches in the selected period
     const lossStats = await Batch.aggregate([
       {
         $match: {
           pharmacyId: pharmacyObjId,
           status: "DISPOSED",
-          updatedAt: { $gte: startDate },
+          updatedAt: { $gte: startDate, $lte: endDate },
         },
       },
       {
@@ -145,6 +153,9 @@ export const getDashboardReport = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       data: {
+        range,
+        startDate,
+        endDate,
         kpis: {
           totalRevenue: summary.totalRevenue,
           totalInvoices: summary.totalInvoices,
@@ -152,7 +163,12 @@ export const getDashboardReport = async (req: Request, res: Response) => {
           totalLoss: lossStats[0]?.totalLoss || 0,
         },
         salesTrend: (reportData[0]?.salesTrend ?? []).map((t: any) => ({
-          name: new Date(t._id).toLocaleDateString("en-US", { weekday: "short" }),
+          date: t._id,
+          name: new Date(t._id).toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          }),
           revenue: t.revenue,
           profit: t.profit,
         })),

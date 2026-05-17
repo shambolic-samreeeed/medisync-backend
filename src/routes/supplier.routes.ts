@@ -1,11 +1,11 @@
 /**
  * @file routes/supplierRoutes.ts
- * @description
- * Supplier routes for MediSync.
+ * @description Supplier routes for MediSync.
  */
 
 import { Router } from "express";
 import { authMiddleware } from "../middlewares/authMiddleware";
+import { pharmacyGuard } from "../middlewares/pharmacyGuard";
 import {
   createSupplier,
   deleteSupplier,
@@ -13,18 +13,19 @@ import {
   getSuppliers,
   updateSupplier,
 } from "../controller/supplierController";
-
 import { getSupplierPurchases } from "../controller/purchaseController";
 
 const router = Router();
 
-router.post("/", authMiddleware, createSupplier);
-router.get("/", authMiddleware, getSuppliers);
-router.get("/:id", authMiddleware, getSupplierById);
-router.put("/:id", authMiddleware, updateSupplier);
-router.delete("/:id", authMiddleware, deleteSupplier);
+// SECURITY: pharmacyGuard ensures all supplier data is tenant-isolated
+router.use(authMiddleware, pharmacyGuard);
 
-//get-supplier-purchase-history
-router.get("/:supplierId/purchases", authMiddleware, getSupplierPurchases);
+router.post("/", createSupplier);
+router.get("/", getSuppliers);
+router.get("/:id", getSupplierById);
+router.put("/:id", updateSupplier);
+router.delete("/:id", deleteSupplier);
+
+router.get("/:supplierId/purchases", getSupplierPurchases);
 
 export default router;

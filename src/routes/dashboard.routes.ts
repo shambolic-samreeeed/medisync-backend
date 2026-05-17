@@ -1,17 +1,25 @@
 import { Router } from "express";
-import { getDashboardKPIs, getInventoryAlerts, getInventoryAlertsSummary, getSalesTrend, getTopSellingMedicines } from "../controller/dashboardController";
+import {
+  getDashboardKPIs,
+  getInventoryAlerts,
+  getInventoryAlertsSummary,
+  getSalesTrend,
+  getTopSellingMedicines,
+} from "../controller/dashboardController";
 import { authMiddleware } from "../middlewares/authMiddleware";
+import { pharmacyGuard } from "../middlewares/pharmacyGuard";
 
 const router = Router();
 
-router.get("/kpis", authMiddleware, getDashboardKPIs);
+// SECURITY: pharmacyGuard enforces tenant isolation — every request must
+// have a valid pharmacyId, blocking cross-pharmacy data access at the
+// middleware level before any controller query runs.
+router.use(authMiddleware, pharmacyGuard);
 
-router.get("/sales-trend", authMiddleware, getSalesTrend);
-
-router.get("/inventory-alerts", authMiddleware, getInventoryAlerts);
-
-router.get("/inventory-alerts/summary", authMiddleware, getInventoryAlertsSummary)
-
-router.get("/top-selling-medicines", authMiddleware, getTopSellingMedicines)
+router.get("/kpis", getDashboardKPIs);
+router.get("/sales-trend", getSalesTrend);
+router.get("/inventory-alerts", getInventoryAlerts);
+router.get("/inventory-alerts/summary", getInventoryAlertsSummary);
+router.get("/top-selling-medicines", getTopSellingMedicines);
 
 export default router;
