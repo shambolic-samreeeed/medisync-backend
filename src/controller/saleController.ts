@@ -721,3 +721,24 @@ export const getSalesStats = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Failed to fetch sales stats", error: err.message });
   }
 };
+
+/**
+ * GET /api/sales/:id
+ * Returns full details of a single sale (with all items) for the pharmacist detail view.
+ */
+export const getSaleById = async (req: Request, res: Response) => {
+  try {
+    const pharmacyId = req.user?.pharmacyId;
+    if (!pharmacyId) return res.status(401).json({ message: "Unauthorized" });
+ 
+    const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
+    const saleObjId     = new mongoose.Types.ObjectId(String(req.params.id));
+ 
+    const sale = await Sale.findOne({ _id: saleObjId, pharmacyId: pharmacyObjId }).lean();
+    if (!sale) return res.status(404).json({ message: "Sale not found" });
+ 
+    return res.status(200).json({ success: true, data: sale });
+  } catch (err: any) {
+    return res.status(500).json({ message: "Failed to fetch sale details", error: err.message });
+  }
+};

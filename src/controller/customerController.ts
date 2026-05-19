@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Customer from "../models/Customer";
+import Sale from "../models/Sale";
 
 function getPharmacyIdOrFail(req: Request, res: Response): string | null {
   const pharmacyId = req.user?.pharmacyId;
@@ -198,5 +199,166 @@ export async function deleteCustomer(req: Request, res: Response) {
     return res.json({ message: "Customer deleted" });
   } catch {
     return res.status(500).json({ message: "Error deleting customer" });
+  }
+}
+
+
+/**
+ * GET /api/customers/stats
+ * KPI summary: total customers, new this month, top spenders.
+ * Must be registered BEFORE the /:id route to avoid being swallowed by it.
+ */
+export async function getCustomerStats(req: Request, res: Response) {
+  try {
+    const pharmacyId = getPharmacyIdOrFail(req, res);
+    if (!pharmacyId) return;
+
+    const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [totalCustomers, newThisMonth, spendAgg] = await Promise.all([
+      Customer.countDocuments({ pharmacyId }),
+      Customer.countDocuments({ pharmacyId, createdAt: { $gte: monthStart } }),
+
+      // Total lifetime spend per registered customer (matched by phone)
+      Sale.aggregate([
+        { $match: { pharmacyId: pharmacyObjId } },
+        {
+          $lookup: {
+            from: "customers",
+            let: { phone: "$customerPhone" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ["$phone", "$$phone"] },
+                      { $eq: ["$pharmacyId", pharmacyObjId] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: "customerDoc",
+          },
+        },
+        { $unwind: "$customerDoc" }, // only registered customers
+        {
+          $group: {
+            _id: "$customerDoc._id",
+            customerName: { $first: "$customerDoc.name" },
+            customerPhone: { $first: "$customerDoc.phone" },
+            customerEmail: { $first: "$customerDoc.email" },
+            totalSpend: { $sum: "$totalAmount" },
+            totalOrders: { $sum: 1 },
+            lastOrderAt: { $max: "$createdAt" },
+          },
+        },
+        { $sort: { totalSpend: -1 } },
+        { $limit: 10 },
+      ]),
+    ]);
+
+    const totalSpendAll = spendAgg.reduce((s: number, c: any) => s + c.totalSpend, 0);
+
+    return res.json({
+      success: true,
+      data: {
+        totalCustomers,
+        newThisMonth,
+        totalSpendAll,
+        topSpenders: spendAgg.map((c: any) => ({
+          customerId:    c._id,
+          name:          c.customerName,
+          phone:         c.customerPhone,
+          email:         c.customerEmail,
+          totalSpend:    c.totalSpend,
+          totalOrders:   c.totalOrders,
+          lastOrderAt:   c.lastOrderAt,
+        })),
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ message: "Failed to fetch customer stats", error: err.message });
+  }
+}
+
+/**
+ * GET /api/customers/:id/transactions?page=1&limit=10
+ * All sales for a specific customer (matched by phone from their Customer record).
+ */
+export async function getCustomerTransactions(req: Request, res: Response) {
+  try {
+    const pharmacyId = getPharmacyIdOrFail(req, res);
+    if (!pharmacyId) return;
+
+    const pharmacyObjId = new mongoose.Types.ObjectId(String(pharmacyId));
+
+    const customer = await Customer.findOne({ _id: req.params.id, pharmacyId });
+    if (!customer) return res.status(404).json({ message: "Customer not found" });
+
+    const page  = Math.max(1, Number(req.query.page)  || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
+    const skip  = (page - 1) * limit;
+
+    const filter = { pharmacyId: pharmacyObjId, customerPhone: customer.phone };
+
+    const [total, sales, spendAgg] = await Promise.all([
+      Sale.countDocuments(filter),
+      Sale.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select("invoiceNumber totalAmount paymentMethod createdAt items")
+        .lean(),
+      Sale.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalSpend:  { $sum: "$totalAmount" },
+            totalOrders: { $sum: 1 },
+            avgOrder:    { $avg: "$totalAmount" },
+            lastOrderAt: { $max: "$createdAt" },
+          },
+        },
+      ]),
+    ]);
+
+    const summary = spendAgg[0] ?? { totalSpend: 0, totalOrders: 0, avgOrder: 0, lastOrderAt: null };
+
+    return res.json({
+      success: true,
+      customer: {
+        _id:   customer._id,
+        name:  customer.name,
+        phone: customer.phone,
+        email: customer.email,
+      },
+      summary: {
+        totalSpend:  summary.totalSpend,
+        totalOrders: summary.totalOrders,
+        avgOrder:    Math.round(summary.avgOrder ?? 0),
+        lastOrderAt: summary.lastOrderAt,
+      },
+      data: sales.map((s: any) => ({
+        _id:           s._id,
+        invoiceNumber: s.invoiceNumber,
+        totalAmount:   s.totalAmount,
+        paymentMethod: s.paymentMethod,
+        itemCount:     s.items?.length ?? 0,
+        createdAt:     s.createdAt,
+      })),
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ message: "Failed to fetch customer transactions", error: err.message });
   }
 }
