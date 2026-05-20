@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { User } from "../models/User"
+import Pharmacy from "../models/Pharmacy";
 
 //get all users 
 export const getAllUsers = async (req: Request, res: Response)=>{
@@ -34,36 +35,25 @@ export const getUsersByRole = async (req: Request, res: Response) => {
   }
 };
 
+// GET /api/users/me — returns the logged-in user + their pharmacy info
+export const getCurrentUser = async (req: Request, res: Response) => {
+  try {
+    const reqUser = (req as any).user;
+    if (!reqUser) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
-//get current user
-// export const getCurrentUser = async (req: Request, res: Response) => {
-//   try {
-//     const userId = req.userId;
+    const user = await User.findById(reqUser._id)
+      .select("-password")
+      .populate("pharmacyId", "name address phone email licenseNumber logoUrl plan subscriptionStatus planEndDate");
 
-//     if (!userId) {
-//       return res.status(401).json({
-//         success: false,
-//         message: "Unauthorized. Token missing or invalid.",
-//       });
-//     }
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
 
-//     const user = await User.findById(userId).select("-password");
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "User not found",
-//       });
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       user,
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Server error",
-//     });
-//   }
-// };
+    return res.status(200).json({ success: true, user });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
