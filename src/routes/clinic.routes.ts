@@ -16,6 +16,7 @@ import {
   bookAppointment,
   getDailyQueue,
   updateAppointmentStatus,
+  getAvailableSlots,
   settleDoctorPayment,
 } from "../controller/appointmentController";
 
@@ -23,7 +24,6 @@ import { requireFeature } from "../middlewares/featureGuard";
 
 const router = Router();
 
-// Apply auth + pharmacy guard + clinic feature gate to all routes
 router.use(authMiddleware, pharmacyGuard, requireFeature("clinicModule"));
 
 // DOCTOR ROUTES
@@ -33,6 +33,9 @@ router.get("/doctors/:id", getDoctorById);
 router.put("/doctors/:id", upload.single("photo"), updateDoctor);
 router.patch("/doctors/:id/toggle-status", toggleDoctorStatus);
 router.delete("/doctors/:id", deleteDoctor);
+
+// SLOTS
+router.get("/doctors/:doctorId/slots", getAvailableSlots);
 
 // APPOINTMENT / QUEUE ROUTES
 router.post("/appointments", bookAppointment);
