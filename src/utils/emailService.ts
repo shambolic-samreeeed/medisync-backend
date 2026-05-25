@@ -458,6 +458,83 @@ export async function sendDailySalesSummaryEmail(data: DailySalesSummaryEmailDat
   console.log(`[EmailService] Daily summary sent -> ${data.pharmacyEmail} | id:${r.messageId}`);
 }
 
+// ─── 6. Expiry Alert ──────────────────────────────────────────────────────────
+
+export interface ExpiryAlertEmailData {
+  pharmacyId: string;
+  pharmacyEmail: string;
+  pharmacyName: string;
+  items: Array<{
+    brandName: string;
+    batchNumber: string;
+    expiryDate: Date;
+    daysUntilExpiry: number;
+    currentQuantity: number;
+  }>;
+}
+
+export async function sendExpiryAlertEmail(data: ExpiryAlertEmailData): Promise<void> {
+  console.log(`[EmailService] sendExpiryAlertEmail -> pharmacy:${data.pharmacyId} (${data.items.length} batches)`);
+  if (!data.pharmacyEmail || data.items.length === 0) { console.warn("[EmailService] Expiry alert skipped"); return; }
+
+  const { transporter, config } = await getTransporterForPharmacy(data.pharmacyId);
+
+  const urgencyColor = (days: number) => days <= 7 ? "#ef4444" : days <= 30 ? "#f59e0b" : "#6366f1";
+  const urgencyLabel = (days: number) => days <= 7 ? "CRITICAL" : days <= 30 ? "EXPIRING SOON" : "EXPIRING";
+
+  const rows = data.items
+    .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
+    .map((item, i) => {
+      const color = urgencyColor(item.daysUntilExpiry);
+      const label = urgencyLabel(item.daysUntilExpiry);
+      return (
+        '<tr style="background:' + (i % 2 === 0 ? "#ffffff" : "#fafafa") + '">' +
+        td('<span style="font-weight:600;color:#18181b;">' + item.brandName + "</span>") +
+        td('<span style="font-family:\'Courier New\',monospace;font-size:12px;">' + item.batchNumber + "</span>") +
+        td(fmtDate(item.expiryDate), "center") +
+        '<td style="padding:12px 14px;text-align:center;border-bottom:1px solid #f4f4f5;">' +
+        '<span style="display:inline-block;padding:2px 10px;background:' + color + '18;color:' + color + ';font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;border-radius:3px;">' +
+        (item.daysUntilExpiry <= 0 ? "EXPIRED" : item.daysUntilExpiry + " days") + "</span></td>" +
+        '<td style="padding:12px 14px;text-align:center;border-bottom:1px solid #f4f4f5;">' +
+        '<span style="display:inline-block;padding:2px 10px;background:' + color + '18;color:' + color + ';font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;border-radius:3px;">' + label + "</span></td>" +
+        td(String(item.currentQuantity) + " units", "center", "font-weight:600;") +
+        "</tr>"
+      );
+    })
+    .join("");
+
+  const critical = data.items.filter(i => i.daysUntilExpiry <= 7).length;
+  const soon     = data.items.filter(i => i.daysUntilExpiry > 7 && i.daysUntilExpiry <= 30).length;
+
+  const header =
+    '<p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#ef4444;">Expiry Alert</p>' +
+    '<h1 style="margin:0 0 6px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.5px;">Medicines Expiring Soon</h1>' +
+    '<p style="margin:0;font-size:14px;color:#71717a;">' + data.items.length + " batch" + (data.items.length > 1 ? "es require" : " requires") + " your attention at " + data.pharmacyName + ".</p>";
+
+  const body =
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">' +
+    "<tr>" +
+    '<td style="width:50%;padding-right:8px;">' + statBox("Critical (≤7 days)", String(critical), "#ef4444") + "</td>" +
+    '<td style="width:50%;padding-left:8px;">' + statBox("Expiring (≤30 days)", String(soon), "#f59e0b") + "</td>" +
+    "</tr></table>" +
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #fecaca;border-radius:6px;overflow:hidden;">' +
+    "<thead><tr>" + th("Medicine") + th("Batch No.") + th("Expiry Date", "center") + th("Time Left", "center") + th("Urgency", "center") + th("Stock", "center") + "</tr></thead>" +
+    "<tbody>" + rows + "</tbody>" +
+    "</table>" +
+    divider() +
+    '<p style="margin:0;font-size:13px;color:#71717a;border-left:3px solid #ef4444;padding-left:14px;">Review expired or soon-to-expire stock and arrange disposal or return to supplier. Dispensing expired medicines is a compliance risk.</p>';
+
+  const html = wrap("Expiry Alert — " + data.items.length + " batch(es) — " + data.pharmacyName, "#ef4444", header, body);
+
+  const r = await transporter.sendMail({
+    from: buildFromAddress(config),
+    to: data.pharmacyEmail,
+    subject: "Expiry Alert — " + data.items.length + " batch" + (data.items.length > 1 ? "es" : "") + " expiring at " + data.pharmacyName,
+    html,
+  });
+  console.log(`[EmailService] Expiry alert sent -> ${data.pharmacyEmail} | id:${r.messageId}`);
+}
+
 // ─── Legacy shim — kept so app.ts doesn't break ───────────────────────────────
 /**
  * @deprecated The new system requires pharmacyId on each call.

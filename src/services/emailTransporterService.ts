@@ -148,6 +148,11 @@ export async function getTransporterForPharmacy(
     greetingTimeout: 10_000,
     socketTimeout: 20_000,
     pool: false,
+    // Force IPv4 — many hosting providers (Render, Railway, Fly.io) have broken or
+    // unreachable IPv6 routes to external SMTP servers (e.g. Gmail returns
+    // ENETUNREACH on the IPv6 address). Setting family:4 ensures Node's DNS
+    // resolver picks an A record instead of AAAA, bypassing the issue entirely.
+    family: 4,
   };
 
   const transporter = nodemailer.createTransport(smtpOptions);

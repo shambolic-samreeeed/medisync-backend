@@ -7,6 +7,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import { startSubscriptionJob } from "./jobs/subscription.job";
 import { startDailySummaryJob } from "./jobs/dailySummary.job";
+import { startExpiryAlertJob } from "./jobs/expiryAlert.job";
 
 // ── Eagerly register all Mongoose models at startup ─────────────────────────
 // Mongoose resolves populate() by looking up model names in its registry.
@@ -54,6 +55,7 @@ app.use(cookieParser());
 
 startSubscriptionJob();
 startDailySummaryJob();
+startExpiryAlertJob();
 
 // NOTE: Global SMTP startup verification is removed.
 // In the multi-tenant system, each pharmacy manages its own SMTP configuration.
