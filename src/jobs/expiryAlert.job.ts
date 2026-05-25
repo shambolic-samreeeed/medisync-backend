@@ -50,7 +50,7 @@ interface BatchDoc {
 }
 
 async function runExpiryAlertJob() {
-  console.log("💊 [ExpiryAlertJob] Checking for expiring batches...");
+  console.log(" [ExpiryAlertJob] Checking for expiring batches...");
 
   const now = DateTime.now().setZone(NEPAL_TZ);
   const thresholdDate = now.plus({ days: ALERT_THRESHOLD_DAYS }).toJSDate();
@@ -64,7 +64,7 @@ async function runExpiryAlertJob() {
     .select("name email _id")
     .lean()) as PharmacyDoc[];
 
-  console.log(`💊 [ExpiryAlertJob] Found ${pharmacies.length} pharmacies to check.`);
+  console.log(` [ExpiryAlertJob] Found ${pharmacies.length} pharmacies to check.`);
 
   for (const pharmacy of pharmacies) {
     try {
@@ -79,7 +79,7 @@ async function runExpiryAlertJob() {
         .lean()) as unknown as BatchDoc[];
 
       if (!batches.length) {
-        console.log(`✅ [ExpiryAlertJob] No expiring batches for ${pharmacy.name} — skipping.`);
+        console.log(` [ExpiryAlertJob] No expiring batches for ${pharmacy.name} — skipping.`);
         continue;
       }
 
@@ -104,7 +104,7 @@ async function runExpiryAlertJob() {
       });
 
       console.log(
-        `✅ [ExpiryAlertJob] Alert sent for ${pharmacy.name} — ` +
+        ` [ExpiryAlertJob] Alert sent for ${pharmacy.name} — ` +
           `${items.length} batch(es) expiring within ${ALERT_THRESHOLD_DAYS} days.`
       );
     } catch (err: any) {
@@ -113,23 +113,22 @@ async function runExpiryAlertJob() {
         err.message?.includes("incomplete SMTP")
       ) {
         console.warn(
-          `⚠️  [ExpiryAlertJob] Skipping ${pharmacy.name} — no SMTP config set. ` +
+          `  [ExpiryAlertJob] Skipping ${pharmacy.name} — no SMTP config set. ` +
             "Configure email settings in the pharmacy settings panel."
         );
       } else {
         console.error(
-          `❌ [ExpiryAlertJob] Failed to send expiry alert for ${pharmacy.name}:`,
+          ` [ExpiryAlertJob] Failed to send expiry alert for ${pharmacy.name}:`,
           err.message
         );
       }
     }
   }
 
-  console.log("✅ [ExpiryAlertJob] Expiry alert job completed.");
+  console.log(" [ExpiryAlertJob] Expiry alert job completed.");
 }
 
 export const startExpiryAlertJob = () => {
-  // Nepal is UTC+5:45. 8:00 AM NST = 02:15 UTC → cron: "15 2 * * *"
-  cron.schedule("15 2 * * *", runExpiryAlertJob, { timezone: "UTC" });
-  console.log("✅ Expiry alert cron job registered (8:00 AM Nepal time, every day).");
+  cron.schedule("45 2 * * *", runExpiryAlertJob, { timezone: "UTC" });
+  console.log(" Expiry alert cron job registered (8:30 AM Nepal time, every day).");
 };

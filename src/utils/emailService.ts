@@ -153,7 +153,7 @@ export interface DailySalesSummaryEmailData {
 
 export async function sendSaleReceiptEmail(data: SaleReceiptEmailData): Promise<void> {
   console.log(`[EmailService] sendSaleReceiptEmail -> pharmacy:${data.pharmacyId} customer:${data.customerEmail}`);
-  if (!data.customerEmail) { console.warn("[EmailService] No customer email — skipping receipt"); return; }
+  if (!data.customerEmail) { console.warn("[EmailService] No customer email :skipping receipt"); return; }
 
   const { transporter, config } = await getTransporterForPharmacy(data.pharmacyId);
 
@@ -200,12 +200,12 @@ export async function sendSaleReceiptEmail(data: SaleReceiptEmailData): Promise<
     '<tr><td style="font-size:15px;font-weight:700;color:#18181b;padding:12px 0 0;">Total</td>' +
     '<td style="font-size:18px;font-weight:700;color:#18181b;text-align:right;padding:12px 0 0;">' + money(data.totalAmount) + "</td></tr></table>";
 
-  const html = wrap("Receipt " + data.invoiceNumber + " — " + data.pharmacyName, "#18181b", header, body);
+  const html = wrap("Receipt " + data.invoiceNumber + " :" + data.pharmacyName, "#18181b", header, body);
 
   const r = await transporter.sendMail({
     from: buildFromAddress(config),
     to: data.customerEmail,
-    subject: "Receipt " + data.invoiceNumber + " — " + data.pharmacyName,
+    subject: "Receipt " + data.invoiceNumber + " :" + data.pharmacyName,
     html,
   });
   console.log(`[EmailService] Receipt sent -> ${data.customerEmail} | id:${r.messageId}`);
@@ -252,12 +252,12 @@ export async function sendLowStockAlert(data: LowStockEmailData): Promise<void> 
     divider() +
     '<p style="margin:0;font-size:13px;color:#71717a;border-left:3px solid #f59e0b;padding-left:14px;">Contact your suppliers promptly to ensure stock is replenished before it runs out completely.</p>';
 
-  const html = wrap("Low Stock: " + data.items.length + " item(s) need attention — " + data.pharmacyName, "#f59e0b", header, body);
+  const html = wrap("Low Stock: " + data.items.length + " item(s) need attention :" + data.pharmacyName, "#f59e0b", header, body);
 
   const r = await transporter.sendMail({
     from: buildFromAddress(config),
     to: data.pharmacyEmail,
-    subject: "Low Stock Warning — " + data.items.length + " medicine" + (data.items.length > 1 ? "s" : "") + " need restocking",
+    subject: "Low Stock Warning :" + data.items.length + " medicine" + (data.items.length > 1 ? "s" : "") + " need restocking",
     html,
   });
   console.log(`[EmailService] Low-stock alert sent -> ${data.pharmacyEmail} | id:${r.messageId}`);
@@ -297,12 +297,12 @@ export async function sendOutOfStockAlert(data: OutOfStockEmailData): Promise<vo
     divider() +
     '<p style="margin:0;font-size:13px;color:#71717a;border-left:3px solid #ef4444;padding-left:14px;">Contact your suppliers immediately. Out-of-stock medicines directly impact patient care and revenue.</p>';
 
-  const html = wrap("Out of Stock: " + data.items.length + " medicine(s) — " + data.pharmacyName, "#ef4444", header, body);
+  const html = wrap("Out of Stock: " + data.items.length + " medicine(s) :" + data.pharmacyName, "#ef4444", header, body);
 
   const r = await transporter.sendMail({
     from: buildFromAddress(config),
     to: data.pharmacyEmail,
-    subject: "Out of Stock — " + data.items.length + " medicine" + (data.items.length > 1 ? "s require" : " requires") + " immediate reorder",
+    subject: "Out of Stock :" + data.items.length + " medicine" + (data.items.length > 1 ? "s require" : " requires") + " immediate reorder",
     html,
   });
   console.log(`[EmailService] Out-of-stock alert sent -> ${data.pharmacyEmail} | id:${r.messageId}`);
@@ -345,7 +345,7 @@ export async function sendBatchDisposalAlert(data: BatchDisposalEmailData): Prom
   const header =
     '<p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#71717a;">Inventory Update</p>' +
     '<h1 style="margin:0 0 6px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.5px;">Batch Disposal Report</h1>' +
-    '<p style="margin:0;font-size:14px;color:#71717a;">' + data.batches.length + " batch" + (data.batches.length > 1 ? "es have" : " has") + " been disposed — " + totalDisposed + " total units.</p>";
+    '<p style="margin:0;font-size:14px;color:#71717a;">' + data.batches.length + " batch" + (data.batches.length > 1 ? "es have" : " has") + " been disposed :" + totalDisposed + " total units.</p>";
 
   const body =
     '<p style="margin:0 0 24px;font-size:14px;color:#374151;">The following batch' + (data.batches.length > 1 ? "es have" : " has") + " been disposed at <strong>" + data.pharmacyName + "</strong>. Please retain this report for your records.</p>" +
@@ -361,12 +361,12 @@ export async function sendBatchDisposalAlert(data: BatchDisposalEmailData): Prom
     divider() +
     '<p style="margin:0;font-size:13px;color:#71717a;border-left:3px solid #e4e4e7;padding-left:14px;">Please update your physical stock records and inform relevant suppliers if the disposal was due to a recall or supplier fault.</p>';
 
-  const html = wrap("Batch Disposal Report — " + data.batches.length + " batch(es) — " + data.pharmacyName, "#18181b", header, body);
+  const html = wrap("Batch Disposal Report :" + data.batches.length + " batch(es) :" + data.pharmacyName, "#18181b", header, body);
 
   const r = await transporter.sendMail({
     from: buildFromAddress(config),
     to: data.pharmacyEmail,
-    subject: "Batch Disposal Report — " + data.batches.length + " batch" + (data.batches.length > 1 ? "es" : "") + " (" + totalDisposed + " units)",
+    subject: "Batch Disposal Report :" + data.batches.length + " batch" + (data.batches.length > 1 ? "es" : "") + " (" + totalDisposed + " units)",
     html,
   });
   console.log(`[EmailService] Disposal alert sent -> ${data.pharmacyEmail} | id:${r.messageId}`);
@@ -376,7 +376,7 @@ export async function sendBatchDisposalAlert(data: BatchDisposalEmailData): Prom
 
 export async function sendDailySalesSummaryEmail(data: DailySalesSummaryEmailData): Promise<void> {
   console.log(`[EmailService] sendDailySalesSummaryEmail -> pharmacy:${data.pharmacyId}`);
-  if (!data.pharmacyEmail) { console.warn("[EmailService] Daily summary skipped — no pharmacy email"); return; }
+  if (!data.pharmacyEmail) { console.warn("[EmailService] Daily summary skipped :no pharmacy email"); return; }
 
   const { transporter, config } = await getTransporterForPharmacy(data.pharmacyId);
 
@@ -447,12 +447,12 @@ export async function sendDailySalesSummaryEmail(data: DailySalesSummaryEmailDat
     divider() +
     '<p style="margin:0;font-size:13px;color:#a1a1aa;text-align:center;">Automatically generated at 8:00 PM Nepal Time. Log in to MediSync for full analytics.</p>';
 
-  const html = wrap("Daily Sales Summary — " + data.date + " — " + data.pharmacyName, "#18181b", header, body);
+  const html = wrap("Daily Sales Summary :" + data.date + " :" + data.pharmacyName, "#18181b", header, body);
 
   const r = await transporter.sendMail({
     from: buildFromAddress(config),
     to: data.pharmacyEmail,
-    subject: "Daily Summary — " + data.date + " — " + money(data.totalRevenue) + " revenue, " + data.totalTransactions + " sales",
+    subject: "Daily Summary :" + data.date + " :" + money(data.totalRevenue) + " revenue, " + data.totalTransactions + " sales",
     html,
   });
   console.log(`[EmailService] Daily summary sent -> ${data.pharmacyEmail} | id:${r.messageId}`);
@@ -524,18 +524,18 @@ export async function sendExpiryAlertEmail(data: ExpiryAlertEmailData): Promise<
     divider() +
     '<p style="margin:0;font-size:13px;color:#71717a;border-left:3px solid #ef4444;padding-left:14px;">Review expired or soon-to-expire stock and arrange disposal or return to supplier. Dispensing expired medicines is a compliance risk.</p>';
 
-  const html = wrap("Expiry Alert — " + data.items.length + " batch(es) — " + data.pharmacyName, "#ef4444", header, body);
+  const html = wrap("Expiry Alert :" + data.items.length + " batch(es) :" + data.pharmacyName, "#ef4444", header, body);
 
   const r = await transporter.sendMail({
     from: buildFromAddress(config),
     to: data.pharmacyEmail,
-    subject: "Expiry Alert — " + data.items.length + " batch" + (data.items.length > 1 ? "es" : "") + " expiring at " + data.pharmacyName,
+    subject: "Expiry Alert :" + data.items.length + " batch" + (data.items.length > 1 ? "es" : "") + " expiring at " + data.pharmacyName,
     html,
   });
   console.log(`[EmailService] Expiry alert sent -> ${data.pharmacyEmail} | id:${r.messageId}`);
 }
 
-// ─── Legacy shim — kept so app.ts doesn't break ───────────────────────────────
+// ─── Legacy shim :kept so app.ts doesn't break ───────────────────────────────
 /**
  * @deprecated The new system requires pharmacyId on each call.
  * This shim no longer attempts a global SMTP connection.
