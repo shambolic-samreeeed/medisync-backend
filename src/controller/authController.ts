@@ -1,10 +1,24 @@
+/**
+ * @file controllers/authController.ts
+ * @description
+ * Handles user authentication, registration, profile management,
+ * password updates, and JWT token generation for the
+ * Pharmacy Management System.
+ *
+ * Core features:
+ *  1. User registration with role validation
+ *  2. Secure login with JWT access/refresh tokens
+ *  3. Password hashing using model pre-save hooks
+ *  4. Role-based authorization and access control
+ *  5. User profile update and password management
+ *  6. Prevents self-deletion and unauthorized updates
+ */
+
 import { Request, Response } from "express";
 import { User } from "../models/User";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.helper";
 
-/**
- * POST /api/auth/register
- */
+// Register a user
 export const register = async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, email, password, role, pharmacyId } = req.body;
@@ -55,9 +69,7 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * POST /api/auth/login
- */
+// Login
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password, rememberMe = false } = req.body;
@@ -124,7 +136,7 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-// DELETE /api/auth/users/:userId
+// Logout
 export const deleteUserByUserId = async (req: Request, res: Response) => {
   try {
     const userId = req.params.userId;
@@ -151,7 +163,6 @@ export const deleteUserByUserId = async (req: Request, res: Response) => {
   }
 };
 
-// PUT /api/auth/users/:userId
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
@@ -191,7 +202,6 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
-// PUT /api/auth/users/:userId/password
 export const updatePassword = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;

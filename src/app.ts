@@ -9,10 +9,7 @@ import { startSubscriptionJob } from "./jobs/subscription.job";
 import { startDailySummaryJob } from "./jobs/dailySummary.job";
 import { startExpiryAlertJob } from "./jobs/expiryAlert.job";
 
-// ── Eagerly register all Mongoose models at startup ─────────────────────────
-// Mongoose resolves populate() by looking up model names in its registry.
-// Importing every model here guarantees they are registered before any
-// request handler runs, regardless of which route is hit first.
+// Models
 import "./models/GenericMedicine";
 import "./models/ProductMedicine";
 import "./models/Batch";
@@ -26,9 +23,9 @@ import "./models/SubscriptionPlan";
 import "./models/Subscription";
 import "./models/PaymentRecord";
 import "./models/PharmacySettings";
-import "./models/PharmacyEmailSettings"; // ← NEW: per-pharmacy SMTP configuration
-// ─────────────────────────────────────────────────────────────────────────────
+import "./models/PharmacyEmailSettings";
 
+// Routes
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/users.routes";
 import medicineRoutes from "./routes/medicine.routes";
@@ -62,7 +59,7 @@ startExpiryAlertJob();
 // Use POST /api/setting/email/test to verify a specific pharmacy's connection.
 console.log("[EmailService] Multi-tenant email system active. Each pharmacy uses its own SMTP configuration.");
 
-// Serve static files (Crucial for QR code images!)
+//handle uploads for qr codes 
 app.use("/uploads", express.static("uploads"));
 
 // CORS configuration
@@ -76,8 +73,8 @@ app.use(
   })
 );
 
-// ── API Routes ───────────────────────────────────────────────────────────────
 
+// API ROUTES
 app.use("/api/auth",         authRoutes);
 app.use("/api/users",        userRoutes);
 app.use("/api/medicines",    medicineRoutes);

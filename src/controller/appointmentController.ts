@@ -1,3 +1,19 @@
+/**
+ * @file controllers/appointmentController.ts
+ * @description
+ * Handles doctor appointment booking, queue management, slot generation,
+ * appointment status updates, and doctor payment settlement for the
+ * Pharmacy Management System.
+ *
+ * Core features:
+ *  1. Prevents overlapping doctor appointments
+ *  2. Validates doctor availability schedules
+ *  3. Manages appointment queue workflow/status
+ *  4. Generates real-time available booking slots
+ *  5. Calculates doctor payout and pharmacy commission
+ *  6. Tracks and settles pending doctor balances
+ */
+
 import { Request, Response } from "express";
 import Doctor from "../models/Doctor";
 import Appointment from "../models/Appointment";
@@ -19,6 +35,7 @@ function parseDateLocal(dateStr: string): Date {
   return new Date(year, month - 1, day);
 }
 
+// Book a new appointment for a doctor.
 export const bookAppointment = async (req: Request, res: Response) => {
   try {
     const pharmacyId = (req as any).user.pharmacyId;
@@ -116,6 +133,7 @@ export const bookAppointment = async (req: Request, res: Response) => {
   }
 };
 
+// Get the appointment que for the given date.
 export const getDailyQueue = async (req: Request, res: Response) => {
   try {
     const pharmacyId = (req as any).user.pharmacyId;
@@ -144,6 +162,7 @@ export const getDailyQueue = async (req: Request, res: Response) => {
   }
 };
 
+// Update appointment status 
 export const updateAppointmentStatus = async (req: Request, res: Response) => {
   try {
     const pharmacyId        = (req as any).user.pharmacyId;
@@ -202,6 +221,7 @@ export const updateAppointmentStatus = async (req: Request, res: Response) => {
   }
 };
 
+// Fetch the available time slotd for a doctor.
 export const getAvailableSlots = async (req: Request, res: Response) => {
   try {
     const pharmacyId = (req as any).user.pharmacyId;
@@ -295,6 +315,7 @@ export const getAvailableSlots = async (req: Request, res: Response) => {
   }
 };
 
+// Settle the pending balance for a doctor.
 export const settleDoctorPayment = async (req: Request, res: Response) => {
   try {
     const pharmacyId   = (req as any).user.pharmacyId;

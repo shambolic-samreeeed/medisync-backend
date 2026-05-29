@@ -129,6 +129,11 @@ async function runExpiryAlertJob() {
 }
 
 export const startExpiryAlertJob = () => {
-  cron.schedule("45 2 * * *", runExpiryAlertJob, { timezone: "UTC" });
-  console.log(" Expiry alert cron job registered (8:30 AM Nepal time, every day).");
+
+  // minute - hour - day - month -weekday
+  cron.schedule("0 8 * * *", runExpiryAlertJob, {
+  timezone: "Asia/Kathmandu",
+})
+
+console.log(" Expiry alert cron job registered (8:00 AM Nepal time, every day).");;
 };
