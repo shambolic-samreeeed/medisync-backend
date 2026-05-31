@@ -54,6 +54,20 @@ export const getSellableMedicinesForPOS = async (req: Request, res: Response) =>
               },
             },
             { $sort: { expiryDate: 1, createdAt: 1 } },
+            // Lookup supplier name from within the batch pipeline
+            {
+              $lookup: {
+                from: "suppliers",
+                localField: "supplierId",
+                foreignField: "_id",
+                as: "supplierDoc",
+              },
+            },
+            {
+              $addFields: {
+                supplierName: { $arrayElemAt: ["$supplierDoc.name", 0] },
+              },
+            },
           ],
           as: "activeBatches",
         },
@@ -78,6 +92,7 @@ export const getSellableMedicinesForPOS = async (req: Request, res: Response) =>
           reorderLevel: 1,
           photoUrl: 1,
           totalStock: 1,
+          createdAt: 1,       
           generic: {
             _id: "$generic._id",
             genericName: "$generic.genericName",
@@ -91,6 +106,8 @@ export const getSellableMedicinesForPOS = async (req: Request, res: Response) =>
             sellingPrice: "$nextBatch.sellingPrice",
             expiryDate: "$nextBatch.expiryDate",
             currentQuantity: "$nextBatch.currentQuantity",
+            manufactureDate: "$nextBatch.manufactureDate", 
+            supplierName: "$nextBatch.supplierName",       
           },
         },
       },

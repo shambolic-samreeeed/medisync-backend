@@ -29,7 +29,7 @@ const GenericMedicineSchema = new Schema<IGenericMedicine>(
       enum: [
         "tablet", "capsule", "syrup", "injection", "drops",
         "cream", "ointment", "inhaler", "patch", "suppository",
-        "powder", "solution", "other",
+        "powder", "solution","sachet", "pessary","other",
       ],
     },
 
